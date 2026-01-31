@@ -5,10 +5,12 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 pub mod blocks;
+pub mod contracts;
 mod queries;
 pub mod transactions;
 
 pub use blocks::*;
+pub use contracts::*;
 pub use queries::*;
 pub use transactions::*;
 

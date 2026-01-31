@@ -101,3 +101,48 @@ pub struct TransactionListResponse {
     pub block_number: u64,
     pub total: usize,
 }
+
+/// Contract information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractResponse {
+    pub address: String,
+    pub class_hash: Option<String>,
+    pub nonce: Option<u64>,
+}
+
+/// Storage entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageEntryResponse {
+    pub key: String,
+    pub value: String,
+}
+
+/// Contract storage response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractStorageResponse {
+    pub address: String,
+    pub entries: Vec<StorageEntryResponse>,
+    pub total: usize,
+}
+
+/// Class information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClassResponse {
+    pub class_hash: String,
+    pub class_type: String,
+    pub compiled_class_hash: Option<String>,
+}
+
+/// List of contracts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractListResponse {
+    pub contracts: Vec<ContractResponse>,
+    pub total: usize,
+}
+
+/// List of classes
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClassListResponse {
+    pub classes: Vec<ClassResponse>,
+    pub total: usize,
+}

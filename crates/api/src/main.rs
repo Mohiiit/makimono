@@ -10,8 +10,10 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use visualizer_types::{
-    BlockDetail, BlockListResponse, BlockSummary, EventInfo, HealthResponse, MessageInfo,
-    StatsResponse, TransactionDetail, TransactionListResponse, TransactionSummary,
+    BlockDetail, BlockListResponse, BlockSummary, ClassListResponse, ClassResponse,
+    ContractListResponse, ContractResponse, ContractStorageResponse, EventInfo, HealthResponse,
+    MessageInfo, StatsResponse, StorageEntryResponse, TransactionDetail, TransactionListResponse,
+    TransactionSummary,
 };
 
 #[derive(Parser, Debug)]
@@ -231,6 +233,114 @@ async fn transaction_detail(
     }))
 }
 
+// Contract endpoints
+
+#[derive(Deserialize)]
+struct LimitQuery {
+    #[serde(default = "default_limit_usize")]
+    limit: usize,
+}
+
+fn default_limit_usize() -> usize {
+    20
+}
+
+async fn contracts(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<LimitQuery>,
+) -> Json<ContractListResponse> {
+    let contracts: Vec<ContractResponse> = state
+        .db
+        .list_contracts(query.limit)
+        .into_iter()
+        .map(|c| ContractResponse {
+            address: c.address,
+            class_hash: c.class_hash,
+            nonce: c.nonce,
+        })
+        .collect();
+
+    let total = contracts.len();
+
+    Json(ContractListResponse { contracts, total })
+}
+
+async fn contract_detail(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<String>,
+) -> Result<Json<ContractResponse>, (StatusCode, String)> {
+    let contract = state
+        .db
+        .get_contract(&address)
+        .ok_or((StatusCode::NOT_FOUND, format!("Contract {} not found", address)))?;
+
+    Ok(Json(ContractResponse {
+        address: contract.address,
+        class_hash: contract.class_hash,
+        nonce: contract.nonce,
+    }))
+}
+
+async fn contract_storage(
+    State(state): State<Arc<AppState>>,
+    Path(address): Path<String>,
+    Query(query): Query<LimitQuery>,
+) -> Json<ContractStorageResponse> {
+    let entries: Vec<StorageEntryResponse> = state
+        .db
+        .get_contract_storage(&address, query.limit)
+        .into_iter()
+        .map(|e| StorageEntryResponse {
+            key: e.key,
+            value: e.value,
+        })
+        .collect();
+
+    let total = entries.len();
+
+    Json(ContractStorageResponse {
+        address,
+        entries,
+        total,
+    })
+}
+
+async fn classes(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<LimitQuery>,
+) -> Json<ClassListResponse> {
+    let classes: Vec<ClassResponse> = state
+        .db
+        .list_classes(query.limit)
+        .into_iter()
+        .map(|c| ClassResponse {
+            class_hash: c.class_hash,
+            class_type: c.class_type.to_string(),
+            compiled_class_hash: c.compiled_class_hash,
+        })
+        .collect();
+
+    let total = classes.len();
+
+    Json(ClassListResponse { classes, total })
+}
+
+async fn class_detail(
+    State(state): State<Arc<AppState>>,
+    Path(class_hash): Path<String>,
+) -> Result<Json<ClassResponse>, (StatusCode, String)> {
+    let class = state
+        .db
+        .get_class(&class_hash)
+        .ok_or((StatusCode::NOT_FOUND, format!("Class {} not found", class_hash)))?;
+
+    Ok(Json(ClassResponse {
+        class_hash: class.class_hash,
+        class_type: class.class_type.to_string(),
+        compiled_class_hash: class.compiled_class_hash,
+    }))
+}
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -259,6 +369,11 @@ async fn main() {
         .route("/api/blocks/{block_number}/transactions", get(block_transactions))
         .route("/api/blocks/{block_number}/transactions/{tx_index}", get(transaction_detail_by_index))
         .route("/api/transactions/{tx_hash}", get(transaction_detail))
+        .route("/api/contracts", get(contracts))
+        .route("/api/contracts/{address}", get(contract_detail))
+        .route("/api/contracts/{address}/storage", get(contract_storage))
+        .route("/api/classes", get(classes))
+        .route("/api/classes/{class_hash}", get(class_detail))
         .with_state(state)
         .layer(cors);
 
