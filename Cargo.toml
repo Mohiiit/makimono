@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/api",
+    "crates/frontend",
+    "crates/types",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Web framework (backend)
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Frontend
+leptos = { version = "0.7", features = ["csr"] }
+
+# Shared
+thiserror = "2"

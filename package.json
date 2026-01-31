@@ -1,0 +1,10 @@
+{
+  "name": "madara-db-visualizer",
+  "version": "0.1.0",
+  "scripts": {
+    "css": "npx tailwindcss -i ./input.css -o ./output.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4"
+  }
+}

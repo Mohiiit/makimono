@@ -1,0 +1,10 @@
+[build]
+target = "index.html"
+dist = "dist"
+
+[watch]
+watch = ["crates/frontend/src", "index.html", "input.css"]
+
+[serve]
+port = 8080
+open = false
