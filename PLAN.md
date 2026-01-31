@@ -66,7 +66,7 @@ madara-db-visualizer/
 
 ## Development Workflow
 
-Each phase follows this cycle:
+Each phase follows this cycle - **commits only after verification passes**:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -76,24 +76,37 @@ Each phase follows this cycle:
 │  1. IMPLEMENT                                               │
 │     └─ Write code for phase requirements                   │
 │                                                             │
-│  2. VERIFY                                                  │
+│  2. VERIFY (agent-browser)                                  │
 │     └─ trunk serve (frontend)                              │
 │     └─ cargo run -p api (backend)                          │
-│     └─ agent-browser snapshot + screenshot                 │
+│     └─ agent-browser open http://localhost:8080            │
+│     └─ agent-browser snapshot -i                           │
+│     └─ agent-browser screenshot /tmp/phase-N.png           │
 │                                                             │
 │  3. SELF-FEEDBACK                                           │
 │     └─ Review screenshot: Does it look right?              │
-│     └─ Test interactions: Do clicks work?                  │
-│     └─ Check data: Is it accurate?                         │
-│     └─ Note issues and fix them                            │
+│     └─ Test interactions: Do clicks/navigation work?       │
+│     └─ Check data: Is it accurate from the DB?             │
+│     └─ Identify issues                                     │
 │                                                             │
-│  4. CHECKPOINT COMMIT                                       │
+│  4. FIX ISSUES (if any)                                     │
+│     └─ Go back to step 1, fix the problems                 │
+│     └─ Repeat steps 2-3 until all checks pass              │
+│                                                             │
+│  5. COMMIT (only after verification passes)                 │
 │     └─ git add -A                                          │
 │     └─ git commit -m "phase-N: <description>"              │
 │                                                             │
-│  5. ITERATE if needed, then move to Phase N+1              │
+│  6. Move to Phase N+1                                       │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
+```
+
+### Key Rule: No commit until it works!
+
+```
+❌ Wrong:  Implement → Commit → Verify → Fix → Commit fix
+✅ Right:  Implement → Verify → Fix → Verify → ... → Works! → Commit
 ```
 
 ---
@@ -101,7 +114,6 @@ Each phase follows this cycle:
 ## Phases
 
 ### Phase 0: Project Scaffold
-**Commit**: `phase-0: project scaffold with hello world`
 
 **Goal**: Working project structure with basic hello world.
 
@@ -120,18 +132,22 @@ cargo run -p api
 # Terminal 2
 trunk serve
 
-# Terminal 3
+# Verify
 agent-browser open http://localhost:8080
 agent-browser snapshot -i
 agent-browser screenshot /tmp/phase0.png
 ```
 
-**Success**: Page shows "Madara DB Visualizer", API returns health OK.
+**Success Criteria**:
+- [ ] Page shows "Madara DB Visualizer"
+- [ ] API returns `{"status": "ok"}` on `/api/health`
+- [ ] No console errors
+
+**Commit when verified**: `phase-0: project scaffold with hello world`
 
 ---
 
 ### Phase 1: Database Connection
-**Commit**: `phase-1: rocksdb connection and stats endpoint`
 
 **Goal**: Connect to RocksDB, show basic stats.
 
@@ -157,12 +173,16 @@ GET /api/stats
 └─────────────────────────────────────┘
 ```
 
-**Success**: Stats from actual DB displayed in UI.
+**Success Criteria**:
+- [ ] Stats endpoint returns real data from DB
+- [ ] Frontend displays latest block number
+- [ ] Column count is 18 (excluding bonsai)
+
+**Commit when verified**: `phase-1: rocksdb connection and stats endpoint`
 
 ---
 
 ### Phase 2: Block Explorer
-**Commit**: `phase-2: block list and detail views`
 
 **Goal**: Browse blocks with pagination, view block details.
 
@@ -191,12 +211,17 @@ GET /api/stats
 └────────────┴─────────────────────────────┘
 ```
 
-**Success**: Can browse blocks, click to see details, navigate prev/next.
+**Success Criteria**:
+- [ ] Block list shows real blocks from DB
+- [ ] Clicking a block shows its details
+- [ ] Prev/Next navigation works
+- [ ] Pagination works (next page, prev page)
+
+**Commit when verified**: `phase-2: block list and detail views`
 
 ---
 
 ### Phase 3: Transaction Browser
-**Commit**: `phase-3: transaction list and details`
 
 **Goal**: View transactions in a block, transaction details.
 
@@ -223,12 +248,17 @@ GET /api/stats
 └────────────┴─────────────────────────────┘
 ```
 
-**Success**: Can view txs in block, click for details, see events.
+**Success Criteria**:
+- [ ] Can see all transactions in a block
+- [ ] Clicking a tx shows full details
+- [ ] Events are displayed
+- [ ] Failed txs show revert reason
+
+**Commit when verified**: `phase-3: transaction list and details`
 
 ---
 
 ### Phase 4: Contract & Class Viewer
-**Commit**: `phase-4: contract state and class browser`
 
 **Goal**: View contract storage and class information.
 
@@ -255,12 +285,17 @@ GET /api/stats
 └────────────┴─────────────────────────────┘
 ```
 
-**Success**: Can lookup contract, view storage, view class info.
+**Success Criteria**:
+- [ ] Can lookup contract by address
+- [ ] Shows correct nonce and class hash
+- [ ] Storage slots displayed with values
+- [ ] Class info shows type (Legacy/Sierra)
+
+**Commit when verified**: `phase-4: contract state and class browser`
 
 ---
 
 ### Phase 5: State Diff & Search
-**Commit**: `phase-5: state diff viewer and search`
 
 **Goal**: View state changes per block, global search.
 
@@ -290,12 +325,17 @@ GET /api/stats
 └────────────┴────────────────────────────┘
 ```
 
-**Success**: Can view state diff, search works across types.
+**Success Criteria**:
+- [ ] State diff shows all changes in a block
+- [ ] Search by block number works
+- [ ] Search by tx hash works
+- [ ] Search by contract address works
+
+**Commit when verified**: `phase-5: state diff viewer and search`
 
 ---
 
 ### Phase 6: Complex Queries (SQLite Index)
-**Commit**: `phase-6: sqlite index and complex queries`
 
 **Goal**: Enable queries RocksDB can't handle efficiently.
 
@@ -324,12 +364,17 @@ GET /api/stats
 └────────────┴─────────────────────────────┘
 ```
 
-**Success**: Can query failed txs, filter by sender, index syncs.
+**Success Criteria**:
+- [ ] Index builds from RocksDB without errors
+- [ ] Can query failed transactions
+- [ ] Can filter by sender address
+- [ ] Index status shows in UI
+
+**Commit when verified**: `phase-6: sqlite index and complex queries`
 
 ---
 
 ### Phase 7: Polish & Export
-**Commit**: `phase-7: polish, export, responsive design`
 
 **Goal**: Production-ready polish.
 
@@ -341,13 +386,28 @@ GET /api/stats
 - [ ] Dark mode toggle
 - [ ] Shareable URLs
 
-**Success**: No crashes, works on mobile, can export data.
+**Success Criteria**:
+- [ ] No unhandled errors/crashes
+- [ ] Works on mobile viewport
+- [ ] Can export block/tx data to JSON
+- [ ] URLs can be shared and reopened
+
+**Commit when verified**: `phase-7: polish, export, responsive design`
 
 ---
 
-## Commit History (Expected)
+## Commit Strategy
+
+**Rule**: Only commit after all success criteria pass.
 
 ```
+✅ Verified working → Commit
+❌ Still has issues → Keep fixing, don't commit
+```
+
+**Expected commits** (one per completed phase):
+```
+Initial commit: project setup with development plan
 phase-0: project scaffold with hello world
 phase-1: rocksdb connection and stats endpoint
 phase-2: block list and detail views
@@ -358,12 +418,7 @@ phase-6: sqlite index and complex queries
 phase-7: polish, export, responsive design
 ```
 
-Each phase may have intermediate commits:
-```
-phase-2: block list and detail views
-phase-2: fix pagination bug
-phase-2: improve block detail layout
-```
+No intermediate "fix" commits - fix issues before committing the phase.
 
 ---
 
@@ -418,13 +473,30 @@ cargo run -p api -- --db-path /tmp/madara_devnet_poc_v2/db
 # Start frontend
 trunk serve
 
-# Visual check
+# Verify with agent-browser
 agent-browser open http://localhost:8080
-agent-browser snapshot -i
-agent-browser screenshot /tmp/check.png
+agent-browser snapshot -i                    # See page structure
+agent-browser screenshot /tmp/check.png     # Visual check
+agent-browser click @e1                      # Test interactions
+agent-browser close
 
-# Commit checkpoint
-git add -A && git commit -m "phase-N: description"
+# Only commit after verification passes!
+git add -A && git commit --no-gpg-sign -m "phase-N: description"
+```
+
+---
+
+## Verification Checklist Template
+
+Before committing each phase, verify:
+
+```
+□ cargo build succeeds (no compile errors)
+□ cargo run -p api starts without panic
+□ trunk serve builds and serves frontend
+□ agent-browser snapshot shows expected structure
+□ agent-browser screenshot looks correct
+□ All success criteria for the phase are met
 ```
 
 ---
