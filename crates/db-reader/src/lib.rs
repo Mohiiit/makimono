@@ -4,11 +4,13 @@ use rocksdb::{DBWithThreadMode, MultiThreaded, Options};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
-mod blocks;
+pub mod blocks;
 mod queries;
+pub mod transactions;
 
 pub use blocks::*;
 pub use queries::*;
+pub use transactions::*;
 
 #[derive(Error, Debug)]
 pub enum DbError {

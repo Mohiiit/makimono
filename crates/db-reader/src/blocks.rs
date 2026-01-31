@@ -73,6 +73,34 @@ struct RawMadaraBlockInfo {
     pub tx_hashes: Vec<ByteBuf>,
 }
 
+// Internal type for transactions module
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct RawMadaraBlockInfoInternal {
+    pub header: RawHeaderInternal,
+    pub block_hash: ByteBuf,
+    pub total_l2_gas_used: u128,
+    pub tx_hashes: Vec<ByteBuf>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct RawHeaderInternal {
+    pub parent_block_hash: ByteBuf,
+    pub block_number: u64,
+    pub global_state_root: ByteBuf,
+    pub sequencer_address: ByteBuf,
+    pub block_timestamp: u64,
+    pub transaction_count: u64,
+    pub transaction_commitment: ByteBuf,
+    pub event_count: u64,
+    pub event_commitment: ByteBuf,
+    pub state_diff_length: Option<u64>,
+    pub state_diff_commitment: Option<ByteBuf>,
+    pub receipt_commitment: Option<ByteBuf>,
+    pub protocol_version: RawStarknetVersion,
+    pub gas_prices: RawGasPrices,
+    pub l1_da_mode: RawL1DataAvailabilityMode,
+}
+
 /// Simplified block summary for API responses
 #[derive(Debug, Clone)]
 pub struct BlockSummary {

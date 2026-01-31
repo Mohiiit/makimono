@@ -10,7 +10,8 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use visualizer_types::{
-    BlockDetail, BlockListResponse, BlockSummary, HealthResponse, StatsResponse,
+    BlockDetail, BlockListResponse, BlockSummary, EventInfo, HealthResponse, MessageInfo,
+    StatsResponse, TransactionDetail, TransactionListResponse, TransactionSummary,
 };
 
 #[derive(Parser, Debug)]
@@ -109,6 +110,127 @@ async fn block_detail(
     }))
 }
 
+async fn block_transactions(
+    State(state): State<Arc<AppState>>,
+    Path(block_number): Path<u64>,
+) -> Result<Json<TransactionListResponse>, (StatusCode, String)> {
+    let transactions = state.db.get_block_transactions(block_number);
+    let total = transactions.len();
+
+    let txs: Vec<TransactionSummary> = transactions
+        .into_iter()
+        .map(|tx| {
+            let (status, revert_reason) = match tx.status {
+                db_reader::ExecutionStatus::Succeeded => ("SUCCEEDED".to_string(), None),
+                db_reader::ExecutionStatus::Reverted(reason) => ("REVERTED".to_string(), Some(reason)),
+            };
+            TransactionSummary {
+                tx_hash: tx.tx_hash,
+                tx_type: tx.tx_type.to_string(),
+                status,
+                revert_reason,
+                block_number: tx.block_number,
+                tx_index: tx.tx_index,
+            }
+        })
+        .collect();
+
+    Ok(Json(TransactionListResponse {
+        transactions: txs,
+        block_number,
+        total,
+    }))
+}
+
+/// Get transaction detail by block number and tx index
+async fn transaction_detail_by_index(
+    State(state): State<Arc<AppState>>,
+    Path((block_number, tx_index)): Path<(u64, u64)>,
+) -> Result<Json<TransactionDetail>, (StatusCode, String)> {
+    let tx = state
+        .db
+        .get_transaction_detail(block_number, tx_index)
+        .ok_or((StatusCode::NOT_FOUND, format!("Transaction at block {} index {} not found", block_number, tx_index)))?;
+
+    let (status, revert_reason) = match tx.status {
+        db_reader::ExecutionStatus::Succeeded => ("SUCCEEDED".to_string(), None),
+        db_reader::ExecutionStatus::Reverted(reason) => ("REVERTED".to_string(), Some(reason)),
+    };
+
+    Ok(Json(TransactionDetail {
+        tx_hash: tx.tx_hash,
+        tx_type: tx.tx_type.to_string(),
+        status,
+        revert_reason,
+        block_number: tx.block_number,
+        tx_index: tx.tx_index,
+        actual_fee: tx.actual_fee,
+        fee_unit: tx.fee_unit,
+        events: tx.events.into_iter().map(|e| EventInfo {
+            from_address: e.from_address,
+            keys: e.keys,
+            data: e.data,
+        }).collect(),
+        messages_sent: tx.messages_sent.into_iter().map(|m| MessageInfo {
+            from_address: m.from_address,
+            to_address: m.to_address,
+            payload: m.payload,
+        }).collect(),
+        sender_address: tx.sender_address,
+        calldata: tx.calldata,
+        signature: tx.signature,
+        nonce: tx.nonce,
+        version: tx.version,
+    }))
+}
+
+async fn transaction_detail(
+    State(state): State<Arc<AppState>>,
+    Path(tx_hash): Path<String>,
+) -> Result<Json<TransactionDetail>, (StatusCode, String)> {
+    // Find the transaction by hash
+    let (block_n, tx_index) = state
+        .db
+        .find_transaction_by_hash(&tx_hash)
+        .ok_or((StatusCode::NOT_FOUND, format!("Transaction {} not found (hash lookup failed)", tx_hash)))?;
+
+    let tx = state
+        .db
+        .get_transaction_detail(block_n, tx_index)
+        .ok_or((StatusCode::NOT_FOUND, format!("Transaction {} not found (detail lookup failed)", tx_hash)))?;
+
+    let (status, revert_reason) = match tx.status {
+        db_reader::ExecutionStatus::Succeeded => ("SUCCEEDED".to_string(), None),
+        db_reader::ExecutionStatus::Reverted(reason) => ("REVERTED".to_string(), Some(reason)),
+    };
+
+    Ok(Json(TransactionDetail {
+        tx_hash: tx.tx_hash,
+        tx_type: tx.tx_type.to_string(),
+        status,
+        revert_reason,
+        block_number: tx.block_number,
+        tx_index: tx.tx_index,
+        actual_fee: tx.actual_fee,
+        fee_unit: tx.fee_unit,
+        events: tx.events.into_iter().map(|e| EventInfo {
+            from_address: e.from_address,
+            keys: e.keys,
+            data: e.data,
+        }).collect(),
+        messages_sent: tx.messages_sent.into_iter().map(|m| MessageInfo {
+            from_address: m.from_address,
+            to_address: m.to_address,
+            payload: m.payload,
+        }).collect(),
+        sender_address: tx.sender_address,
+        calldata: tx.calldata,
+        signature: tx.signature,
+        nonce: tx.nonce,
+        version: tx.version,
+    }))
+}
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -134,6 +256,9 @@ async fn main() {
         .route("/api/stats", get(stats))
         .route("/api/blocks", get(blocks))
         .route("/api/blocks/{block_number}", get(block_detail))
+        .route("/api/blocks/{block_number}/transactions", get(block_transactions))
+        .route("/api/blocks/{block_number}/transactions/{tx_index}", get(transaction_detail_by_index))
+        .route("/api/transactions/{tx_hash}", get(transaction_detail))
         .with_state(state)
         .layer(cors);
 
