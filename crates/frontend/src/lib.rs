@@ -1,9 +1,12 @@
 use leptos::prelude::*;
 use visualizer_types::{
     BlockDetail, BlockListResponse, BlockSummary, ClassListResponse, ClassResponse,
+    ColumnFamilyInfo, ColumnFamilyListResponse, ColumnFamilySchemaInfo,
     ContractListResponse, ContractResponse, ContractStorageResponse, FilteredTransactionsResponse,
-    HealthResponse, IndexStatusResponse, IndexedTransactionInfo, SearchResponse, StateDiffResponse,
-    StatsResponse, TransactionDetail, TransactionListResponse, TransactionSummary,
+    IndexStatusResponse, IndexedTransactionInfo, KeyListResponse, RawKeyValueResponse,
+    SchemaCategoriesResponse, SchemaCategoryInfo, SchemaColumnFamiliesResponse, SearchResponse,
+    StateDiffResponse, StatsResponse, TransactionDetail, TransactionListResponse,
+    TransactionSummary,
 };
 use wasm_bindgen::prelude::*;
 
@@ -38,16 +41,6 @@ fn copy_to_clipboard(text: &str) {
         let clipboard = window.navigator().clipboard();
         let _ = clipboard.write_text(text);
     }
-}
-
-async fn fetch_health() -> Result<HealthResponse, String> {
-    gloo_net::http::Request::get(&format!("{API_BASE}/api/health"))
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())
 }
 
 async fn fetch_stats() -> Result<StatsResponse, String> {
@@ -205,6 +198,102 @@ async fn fetch_filtered_transactions(
         .map_err(|e| e.to_string())
 }
 
+// Schema API functions
+
+async fn fetch_cf_schema(cf_name: &str) -> Result<ColumnFamilySchemaInfo, String> {
+    gloo_net::http::Request::get(&format!(
+        "{API_BASE}/api/schema/column-families/{}",
+        urlencoding::encode(cf_name)
+    ))
+    .send()
+    .await
+    .map_err(|e| e.to_string())?
+    .json()
+    .await
+    .map_err(|e| e.to_string())
+}
+
+// Raw data API functions
+
+async fn fetch_column_families() -> Result<ColumnFamilyListResponse, String> {
+    gloo_net::http::Request::get(&format!("{API_BASE}/api/raw/cf"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn fetch_cf_keys(
+    cf_name: &str,
+    limit: usize,
+    offset: usize,
+    prefix: Option<String>,
+) -> Result<KeyListResponse, String> {
+    let mut url = format!(
+        "{API_BASE}/api/raw/cf/{}/keys?limit={}&offset={}",
+        urlencoding::encode(cf_name),
+        limit,
+        offset
+    );
+    if let Some(p) = prefix {
+        if !p.is_empty() {
+            url.push_str(&format!("&prefix={}", urlencoding::encode(&p)));
+        }
+    }
+    gloo_net::http::Request::get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn fetch_raw_key_value(cf_name: &str, key_hex: &str) -> Result<RawKeyValueResponse, String> {
+    gloo_net::http::Request::get(&format!(
+        "{API_BASE}/api/raw/cf/{}/key/{}",
+        urlencoding::encode(cf_name),
+        urlencoding::encode(key_hex)
+    ))
+    .send()
+    .await
+    .map_err(|e| e.to_string())?
+    .json()
+    .await
+    .map_err(|e| e.to_string())
+}
+
+// Schema API functions
+
+async fn fetch_schema_categories() -> Result<SchemaCategoriesResponse, String> {
+    gloo_net::http::Request::get(&format!("{API_BASE}/api/schema/categories"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn fetch_schema_column_families(category: Option<&str>) -> Result<SchemaColumnFamiliesResponse, String> {
+    let url = match category {
+        Some(cat) => format!(
+            "{API_BASE}/api/schema/column-families?category={}",
+            urlencoding::encode(cat)
+        ),
+        None => format!("{API_BASE}/api/schema/column-families"),
+    };
+    gloo_net::http::Request::get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 fn truncate_hash(hash: &str) -> String {
     if hash.len() > 16 {
         format!("{}...{}", &hash[..10], &hash[hash.len()-6..])
@@ -260,6 +349,10 @@ enum Page {
     ClassList,
     ClassDetail { class_hash: String },
     AdvancedFilters,
+    RawData,
+    RawKeyDetail { cf_name: String, key_hex: String },
+    Schema,
+    SchemaDetail { cf_name: String },
 }
 
 #[component]
@@ -1399,6 +1492,542 @@ fn AdvancedFiltersView(
     }
 }
 
+// Raw Data Browser Components
+
+/// Truncate hex value for display with ellipsis
+fn truncate_hex(hex: &str, max_len: usize) -> String {
+    if hex.len() > max_len {
+        format!("{}...{}", &hex[..max_len / 2], &hex[hex.len() - max_len / 4..])
+    } else {
+        hex.to_string()
+    }
+}
+
+/// Expandable hex value component
+#[component]
+fn ExpandableHex(hex: String, max_len: usize) -> impl IntoView {
+    let (expanded, set_expanded) = signal(false);
+    let hex_clone = hex.clone();
+    let hex_for_copy = hex.clone();
+    let is_long = hex.len() > max_len;
+
+    view! {
+        <div class="flex items-center gap-2">
+            <span
+                class={move || {
+                    let base = "font-mono text-sm break-all";
+                    if is_long && !expanded.get() {
+                        format!("{} cursor-pointer hover:text-blue-400", base)
+                    } else {
+                        base.to_string()
+                    }
+                }}
+                on:click=move |_| {
+                    if is_long {
+                        set_expanded.update(|e| *e = !*e);
+                    }
+                }
+                title=move || if is_long && !expanded.get() { "Click to expand" } else { "" }
+            >
+                {move || {
+                    if expanded.get() || !is_long {
+                        hex_clone.clone()
+                    } else {
+                        truncate_hex(&hex_clone, max_len)
+                    }
+                }}
+            </span>
+            <CopyButton text=hex_for_copy />
+            {if is_long {
+                view! {
+                    <button
+                        class="text-xs text-gray-400 hover:text-white"
+                        on:click=move |_| set_expanded.update(|e| *e = !*e)
+                    >
+                        {move || if expanded.get() { "[-]" } else { "[+]" }}
+                    </button>
+                }.into_any()
+            } else {
+                view! { <span></span> }.into_any()
+            }}
+        </div>
+    }
+}
+
+/// Column family row in the list
+#[component]
+fn ColumnFamilyRow(
+    cf: ColumnFamilyInfo,
+    is_expanded: bool,
+    on_toggle: impl Fn() + 'static,
+    on_key_click: impl Fn(String) + Clone + Send + 'static,
+) -> impl IntoView {
+    let cf_name = cf.name.clone();
+    let cf_name_for_keys = cf.name.clone();
+    let key_count = cf.key_count;
+
+    // Signal to track prefix filter and pagination
+    let (prefix_filter, set_prefix_filter) = signal(String::new());
+    let (offset, set_offset) = signal(0usize);
+    let limit = 50usize;
+
+    // Fetch keys when expanded
+    let keys_resource = LocalResource::new(move || {
+        let cf_name = cf_name_for_keys.clone();
+        let prefix = prefix_filter.get();
+        let current_offset = offset.get();
+        async move {
+            if is_expanded {
+                fetch_cf_keys(&cf_name, limit, current_offset, Some(prefix)).await
+            } else {
+                Err("Not expanded".to_string())
+            }
+        }
+    });
+
+    view! {
+        <div class="border border-gray-700 rounded-lg mb-2">
+            // Header row
+            <div
+                class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-700"
+                on:click=move |_| on_toggle()
+            >
+                <div class="flex items-center gap-3">
+                    <span class="text-gray-400">
+                        {if is_expanded { "[-]" } else { "[+]" }}
+                    </span>
+                    <span class="font-mono text-blue-400">{cf_name.clone()}</span>
+                </div>
+                <span class="text-gray-400 text-sm">{key_count}" keys"</span>
+            </div>
+
+            // Expanded content
+            {move || {
+                if is_expanded {
+                    let on_key_click = on_key_click.clone();
+                    view! {
+                        <div class="border-t border-gray-700 px-4 py-3">
+                            // Filter input
+                            <div class="flex items-center gap-2 mb-3">
+                                <input
+                                    type="text"
+                                    placeholder="Filter by hex prefix (e.g., 0x00)"
+                                    class="flex-1 px-3 py-2 bg-gray-700 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    prop:value=move || prefix_filter.get()
+                                    on:input=move |ev| {
+                                        set_prefix_filter.set(event_target_value(&ev));
+                                        set_offset.set(0);
+                                    }
+                                />
+                                <button
+                                    class="px-3 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm"
+                                    on:click=move |_| {
+                                        set_prefix_filter.set(String::new());
+                                        set_offset.set(0);
+                                    }
+                                >
+                                    "Clear"
+                                </button>
+                            </div>
+
+                            // Keys list
+                            <Suspense fallback=move || view! { <p class="text-gray-400 text-sm">"Loading keys..."</p> }>
+                                {move || {
+                                    let on_key_click = on_key_click.clone();
+                                    keys_resource.get().map(|result| {
+                                        match result.as_ref() {
+                                            Ok(data) => {
+                                                let keys = data.keys.clone();
+                                                let total = data.total;
+                                                let has_more = data.has_more;
+                                                let current_offset = data.offset;
+
+                                                if keys.is_empty() {
+                                                    view! {
+                                                        <p class="text-gray-500 text-sm">"No keys found"</p>
+                                                    }.into_any()
+                                                } else {
+                                                    view! {
+                                                        <div>
+                                                            <div class="max-h-64 overflow-y-auto bg-gray-900 rounded p-2 mb-3">
+                                                                {keys.into_iter().map(|key| {
+                                                                    let key_hex = key.raw_hex.clone();
+                                                                    let key_hex_for_click = key.raw_hex.clone();
+                                                                    let on_key_click = on_key_click.clone();
+                                                                    view! {
+                                                                        <div
+                                                                            class="py-1 px-2 hover:bg-gray-800 cursor-pointer rounded font-mono text-xs text-gray-300 truncate"
+                                                                            on:click=move |_| on_key_click(key_hex_for_click.clone())
+                                                                            title=key_hex.clone()
+                                                                        >
+                                                                            {truncate_hex(&key_hex, 64)}
+                                                                        </div>
+                                                                    }
+                                                                }).collect::<Vec<_>>()}
+                                                            </div>
+
+                                                            // Pagination
+                                                            <div class="flex items-center justify-between text-sm">
+                                                                <span class="text-gray-400">
+                                                                    {current_offset + 1}"-"{current_offset + limit.min(total - current_offset)}" of "{total}
+                                                                </span>
+                                                                <div class="flex gap-2">
+                                                                    <button
+                                                                        class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
+                                                                        disabled=move || offset.get() == 0
+                                                                        on:click=move |_| set_offset.update(|o| *o = o.saturating_sub(limit))
+                                                                    >
+                                                                        "Prev"
+                                                                    </button>
+                                                                    <button
+                                                                        class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
+                                                                        disabled=move || !has_more
+                                                                        on:click=move |_| set_offset.update(|o| *o += limit)
+                                                                    >
+                                                                        "Next"
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    }.into_any()
+                                                }
+                                            },
+                                            Err(_) => view! {
+                                                <p class="text-gray-500 text-sm">"Expand to view keys"</p>
+                                            }.into_any(),
+                                        }
+                                    })
+                                }}
+                            </Suspense>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <div></div> }.into_any()
+                }
+            }}
+        </div>
+    }
+}
+
+/// Main Raw Data Browser view
+#[component]
+fn RawDataView(
+    on_key_select: impl Fn((String, String)) + Clone + Send + 'static,
+) -> impl IntoView {
+    let (expanded_cf, set_expanded_cf) = signal::<Option<String>>(None);
+
+    let cfs = LocalResource::new(|| fetch_column_families());
+
+    view! {
+        <div class="bg-gray-800 rounded-lg p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-2xl font-bold">"Raw Key-Value Browser"</h2>
+                <p class="text-gray-400 text-sm">"Browse raw RocksDB column families and keys"</p>
+            </div>
+
+            <Suspense fallback=move || view! { <p class="text-gray-400">"Loading column families..."</p> }>
+                {move || {
+                    let on_key_select = on_key_select.clone();
+                    cfs.get().map(|result| {
+                        match result.as_ref() {
+                            Ok(data) => {
+                                let mut cf_list = data.column_families.clone();
+                                // Sort by key count descending
+                                cf_list.sort_by(|a, b| b.key_count.cmp(&a.key_count));
+
+                                let total_keys: usize = cf_list.iter().map(|cf| cf.key_count).sum();
+                                let cf_count = cf_list.len();
+
+                                view! {
+                                    <div>
+                                        // Summary stats
+                                        <div class="grid grid-cols-2 gap-4 mb-6">
+                                            <div class="bg-gray-900 rounded-lg p-4">
+                                                <p class="text-gray-400 text-sm">"Column Families"</p>
+                                                <p class="text-2xl font-bold text-blue-400">{cf_count}</p>
+                                            </div>
+                                            <div class="bg-gray-900 rounded-lg p-4">
+                                                <p class="text-gray-400 text-sm">"Total Keys"</p>
+                                                <p class="text-2xl font-bold text-purple-400">{total_keys}</p>
+                                            </div>
+                                        </div>
+
+                                        // Column families list
+                                        <div>
+                                            {cf_list.into_iter().map(|cf| {
+                                                let cf_name = cf.name.clone();
+                                                let cf_name_for_check = cf.name.clone();
+                                                let cf_name_for_key = cf.name.clone();
+                                                let on_key_select = on_key_select.clone();
+
+                                                let is_expanded = move || {
+                                                    expanded_cf.get().as_ref() == Some(&cf_name_for_check)
+                                                };
+
+                                                view! {
+                                                    <ColumnFamilyRow
+                                                        cf=cf
+                                                        is_expanded=is_expanded()
+                                                        on_toggle=move || {
+                                                            set_expanded_cf.update(|current| {
+                                                                if current.as_ref() == Some(&cf_name) {
+                                                                    *current = None;
+                                                                } else {
+                                                                    *current = Some(cf_name.clone());
+                                                                }
+                                                            });
+                                                        }
+                                                        on_key_click=move |key| {
+                                                            on_key_select((cf_name_for_key.clone(), key));
+                                                        }
+                                                    />
+                                                }
+                                            }).collect::<Vec<_>>()}
+                                        </div>
+                                    </div>
+                                }.into_any()
+                            },
+                            Err(e) => view! {
+                                <p class="text-red-400">"Error loading column families: " {e.clone()}</p>
+                            }.into_any(),
+                        }
+                    })
+                }}
+            </Suspense>
+        </div>
+    }
+}
+
+/// Raw Key Detail View - shows full key/value with schema info
+#[component]
+fn RawKeyDetailView(
+    cf_name: String,
+    key_hex: String,
+    on_back: impl Fn() + 'static,
+) -> impl IntoView {
+    let cf_name_for_kv = cf_name.clone();
+    let key_hex_for_kv = key_hex.clone();
+    let cf_name_for_schema = cf_name.clone();
+
+    let kv_resource = LocalResource::new(move || {
+        let cf = cf_name_for_kv.clone();
+        let key = key_hex_for_kv.clone();
+        async move { fetch_raw_key_value(&cf, &key).await }
+    });
+
+    let schema_resource = LocalResource::new(move || {
+        let cf = cf_name_for_schema.clone();
+        async move { fetch_cf_schema(&cf).await }
+    });
+
+    view! {
+        <div class="bg-gray-800 rounded-lg p-6">
+            <button
+                class="mb-4 text-blue-400 hover:underline"
+                on:click=move |_| on_back()
+            >
+                "< Back to Raw Data"
+            </button>
+
+            <h2 class="text-2xl font-bold mb-4">"Raw Key-Value Detail"</h2>
+
+            // Key-Value content
+            <Suspense fallback=move || view! { <p class="text-gray-400">"Loading value..."</p> }>
+                {move || {
+                    kv_resource.get().map(|result| {
+                        match result.as_ref() {
+                            Ok(resp) => {
+                                if let Some(kv) = &resp.key_value {
+                                    let key = kv.key_hex.clone();
+                                    let value = kv.value_hex.clone();
+                                    let value_size = kv.value_size;
+                                    let decoded_hint = kv.decoded_hint.clone();
+                                    let cf = resp.cf_name.clone();
+
+                                    view! {
+                                        <div class="space-y-6">
+                                            // Column Family
+                                            <div class="bg-gray-900 rounded-lg p-4">
+                                                <p class="text-gray-400 text-sm mb-1">"Column Family"</p>
+                                                <p class="font-mono text-blue-400">{cf}</p>
+                                            </div>
+
+                                            // Key
+                                            <div class="bg-gray-900 rounded-lg p-4">
+                                                <p class="text-gray-400 text-sm mb-2">"Key (hex)"</p>
+                                                <ExpandableHex hex=key max_len=80 />
+                                            </div>
+
+                                            // Value
+                                            <div class="bg-gray-900 rounded-lg p-4">
+                                                <div class="flex items-center justify-between mb-2">
+                                                    <p class="text-gray-400 text-sm">"Value (hex)"</p>
+                                                    <span class="text-gray-500 text-xs">{value_size}" bytes"</span>
+                                                </div>
+                                                <ExpandableHex hex=value max_len=120 />
+                                            </div>
+
+                                            // Decoded hint if available
+                                            {decoded_hint.map(|hint| {
+                                                view! {
+                                                    <div class="bg-gray-900 rounded-lg p-4 border-l-4 border-green-500">
+                                                        <p class="text-gray-400 text-sm mb-2">"Decoded Hint"</p>
+                                                        <pre class="font-mono text-sm text-green-400 whitespace-pre-wrap break-all">{hint}</pre>
+                                                    </div>
+                                                }
+                                            })}
+                                        </div>
+                                    }.into_any()
+                                } else {
+                                    view! {
+                                        <div class="bg-gray-900 rounded-lg p-4">
+                                            <p class="text-yellow-400">"Key not found in column family"</p>
+                                        </div>
+                                    }.into_any()
+                                }
+                            },
+                            Err(e) => view! {
+                                <p class="text-red-400">"Error: " {e.clone()}</p>
+                            }.into_any(),
+                        }
+                    })
+                }}
+            </Suspense>
+
+            // Schema documentation section
+            <div class="mt-6">
+                <h3 class="text-lg font-semibold mb-4">"Schema Documentation"</h3>
+                <Suspense fallback=move || view! { <p class="text-gray-400 text-sm">"Loading schema..."</p> }>
+                    {move || {
+                        schema_resource.get().map(|result| {
+                            match result.as_ref() {
+                                Ok(schema) => {
+                                    let purpose = schema.purpose.clone();
+                                    let category = schema.category.clone();
+                                    let key_type = schema.key.rust_type.clone();
+                                    let key_encoding = schema.key.encoding.clone();
+                                    let key_desc = schema.key.description.clone();
+                                    let value_type = schema.value.rust_type.clone();
+                                    let value_encoding = schema.value.encoding.clone();
+                                    let value_desc = schema.value.description.clone();
+                                    let fields = schema.value.fields.clone();
+                                    let relationships = schema.relationships.clone();
+
+                                    view! {
+                                        <div class="bg-gray-900 rounded-lg p-4 space-y-4">
+                                            // Purpose
+                                            <div>
+                                                <p class="text-gray-400 text-sm">"Purpose"</p>
+                                                <p class="text-gray-200">{purpose}</p>
+                                            </div>
+
+                                            // Category
+                                            <div>
+                                                <p class="text-gray-400 text-sm">"Category"</p>
+                                                <span class="px-2 py-1 text-xs rounded bg-gray-700 text-purple-400">{category}</span>
+                                            </div>
+
+                                            // Key format
+                                            <div class="border-t border-gray-700 pt-4">
+                                                <p class="text-gray-400 text-sm mb-2">"Key Format"</p>
+                                                <div class="grid grid-cols-2 gap-2 text-sm">
+                                                    <div>
+                                                        <span class="text-gray-500">"Type: "</span>
+                                                        <span class="font-mono text-cyan-400">{key_type}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span class="text-gray-500">"Encoding: "</span>
+                                                        <span class="font-mono text-yellow-400">{key_encoding}</span>
+                                                    </div>
+                                                </div>
+                                                <p class="text-gray-300 text-sm mt-1">{key_desc}</p>
+                                            </div>
+
+                                            // Value format
+                                            <div class="border-t border-gray-700 pt-4">
+                                                <p class="text-gray-400 text-sm mb-2">"Value Format"</p>
+                                                <div class="grid grid-cols-2 gap-2 text-sm">
+                                                    <div>
+                                                        <span class="text-gray-500">"Type: "</span>
+                                                        <span class="font-mono text-cyan-400">{value_type}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span class="text-gray-500">"Encoding: "</span>
+                                                        <span class="font-mono text-yellow-400">{value_encoding}</span>
+                                                    </div>
+                                                </div>
+                                                <p class="text-gray-300 text-sm mt-1">{value_desc}</p>
+
+                                                // Fields if any
+                                                {if !fields.is_empty() {
+                                                    view! {
+                                                        <div class="mt-3">
+                                                            <p class="text-gray-500 text-xs mb-1">"Fields:"</p>
+                                                            <div class="space-y-1">
+                                                                {fields.into_iter().map(|f| {
+                                                                    view! {
+                                                                        <div class="text-xs bg-gray-800 rounded px-2 py-1">
+                                                                            <span class="font-mono text-blue-400">{f.name}</span>
+                                                                            <span class="text-gray-500">": "</span>
+                                                                            <span class="font-mono text-cyan-400">{f.rust_type}</span>
+                                                                            {if !f.description.is_empty() {
+                                                                                view! {
+                                                                                    <span class="text-gray-400">" - "{f.description}</span>
+                                                                                }.into_any()
+                                                                            } else {
+                                                                                view! { <span></span> }.into_any()
+                                                                            }}
+                                                                        </div>
+                                                                    }
+                                                                }).collect::<Vec<_>>()}
+                                                            </div>
+                                                        </div>
+                                                    }.into_any()
+                                                } else {
+                                                    view! { <div></div> }.into_any()
+                                                }}
+                                            </div>
+
+                                            // Relationships if any
+                                            {if !relationships.is_empty() {
+                                                view! {
+                                                    <div class="border-t border-gray-700 pt-4">
+                                                        <p class="text-gray-400 text-sm mb-2">"Related Column Families"</p>
+                                                        <div class="space-y-2">
+                                                            {relationships.into_iter().map(|r| {
+                                                                view! {
+                                                                    <div class="text-sm bg-gray-800 rounded px-3 py-2">
+                                                                        <span class="font-mono text-blue-400">{r.target_cf}</span>
+                                                                        <span class="text-gray-500">" ("</span>
+                                                                        <span class="text-orange-400">{r.relationship_type}</span>
+                                                                        <span class="text-gray-500">")"</span>
+                                                                        <p class="text-gray-400 text-xs mt-1">{r.description}</p>
+                                                                    </div>
+                                                                }
+                                                            }).collect::<Vec<_>>()}
+                                                        </div>
+                                                    </div>
+                                                }.into_any()
+                                            } else {
+                                                view! { <div></div> }.into_any()
+                                            }}
+                                        </div>
+                                    }.into_any()
+                                },
+                                Err(_) => view! {
+                                    <div class="bg-gray-900 rounded-lg p-4">
+                                        <p class="text-gray-500 text-sm">"Schema documentation not available for this column family"</p>
+                                    </div>
+                                }.into_any(),
+                            }
+                        })
+                    }}
+                </Suspense>
+            </div>
+        </div>
+    }
+}
+
 #[component]
 fn IndexStatusCard() -> impl IntoView {
     let status = LocalResource::new(|| fetch_index_status());
@@ -1609,6 +2238,391 @@ fn SearchBar(on_result: impl Fn(Page) + Clone + Send + 'static) -> impl IntoView
     }
 }
 
+// Schema Browser Components
+
+#[component]
+fn SchemaCategoryCard(
+    category: SchemaCategoryInfo,
+    is_expanded: bool,
+    on_toggle: impl Fn() + 'static,
+    on_cf_select: impl Fn(String) + Clone + Send + 'static,
+) -> impl IntoView {
+    let cat_name = category.name.clone();
+    let cat_name_for_fetch = category.name.clone();
+    let count = category.column_family_count;
+    let description = category.description.clone();
+
+    // Fetch column families for this category when expanded
+    let column_families = LocalResource::new(move || {
+        let cat = cat_name_for_fetch.clone();
+        async move {
+            if is_expanded {
+                fetch_schema_column_families(Some(&cat)).await
+            } else {
+                Ok(SchemaColumnFamiliesResponse {
+                    column_families: vec![],
+                    total: 0,
+                })
+            }
+        }
+    });
+
+    view! {
+        <div class="bg-slate-800 rounded-lg overflow-hidden">
+            // Category header
+            <button
+                class="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-700 transition-colors"
+                on:click=move |_| on_toggle()
+            >
+                <div class="flex items-center gap-3">
+                    <span class="text-lg font-semibold text-white capitalize">{cat_name.clone()}</span>
+                    <span class="px-2 py-0.5 text-xs bg-slate-600 rounded-full text-gray-300">
+                        {count}" CFs"
+                    </span>
+                </div>
+                <span class="text-gray-400 text-lg">
+                    {if is_expanded { "▼" } else { "▶" }}
+                </span>
+            </button>
+
+            // Description
+            <div class="px-4 pb-2">
+                <p class="text-sm text-gray-400">{description}</p>
+            </div>
+
+            // Expanded content - column families list
+            {move || {
+                if is_expanded {
+                    let on_cf_select = on_cf_select.clone();
+                    view! {
+                        <div class="border-t border-slate-700">
+                            <Suspense fallback=move || view! {
+                                <div class="p-4 text-gray-400">"Loading column families..."</div>
+                            }>
+                                {move || {
+                                    let on_cf_select = on_cf_select.clone();
+                                    column_families.get().map(|result| {
+                                        match result.as_ref() {
+                                            Ok(data) => {
+                                                let cfs = data.column_families.clone();
+                                                view! {
+                                                    <div class="divide-y divide-slate-700">
+                                                        {cfs.into_iter().map(|cf| {
+                                                            let cf_name = cf.name.clone();
+                                                            let cf_name_click = cf.name.clone();
+                                                            let purpose = cf.purpose.clone();
+                                                            let on_cf_select = on_cf_select.clone();
+                                                            view! {
+                                                                <button
+                                                                    class="w-full px-4 py-3 text-left hover:bg-slate-700 transition-colors"
+                                                                    on:click=move |_| on_cf_select(cf_name_click.clone())
+                                                                >
+                                                                    <div class="font-mono text-sm text-blue-400 mb-1">
+                                                                        {cf_name}
+                                                                    </div>
+                                                                    <div class="text-xs text-gray-400 line-clamp-2">
+                                                                        {purpose}
+                                                                    </div>
+                                                                </button>
+                                                            }
+                                                        }).collect::<Vec<_>>()}
+                                                    </div>
+                                                }.into_any()
+                                            },
+                                            Err(e) => view! {
+                                                <div class="p-4 text-red-400">
+                                                    "Error: "{e.clone()}
+                                                </div>
+                                            }.into_any(),
+                                        }
+                                    })
+                                }}
+                            </Suspense>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <div></div> }.into_any()
+                }
+            }}
+        </div>
+    }
+}
+
+#[component]
+fn SchemaView(
+    on_cf_select: impl Fn(String) + Clone + Send + 'static,
+) -> impl IntoView {
+    let categories = LocalResource::new(|| fetch_schema_categories());
+    let (expanded_category, set_expanded_category) = signal::<Option<String>>(None);
+
+    view! {
+        <div class="bg-slate-800 rounded-lg p-6">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-white mb-2">"Database Schema Browser"</h2>
+                <p class="text-gray-400">
+                    "Explore Madara's RocksDB column families, their key/value encoding, and relationships. "
+                    "Click on a column family to see detailed schema documentation."
+                </p>
+            </div>
+
+            <Suspense fallback=move || view! {
+                <div class="text-gray-400">"Loading schema categories..."</div>
+            }>
+                {move || {
+                    let on_cf_select = on_cf_select.clone();
+                    categories.get().map(|result| {
+                        match result.as_ref() {
+                            Ok(data) => {
+                                let cats = data.categories.clone();
+                                view! {
+                                    <div class="space-y-3">
+                                        {cats.into_iter().map(|cat| {
+                                            let cat_name_check = cat.name.clone();
+                                            let cat_name_toggle = cat.name.clone();
+                                            let on_cf_select = on_cf_select.clone();
+                                            let is_expanded = move || expanded_category.get() == Some(cat_name_check.clone());
+                                            view! {
+                                                <SchemaCategoryCard
+                                                    category=cat
+                                                    is_expanded=is_expanded()
+                                                    on_toggle=move || {
+                                                        let current = expanded_category.get();
+                                                        if current == Some(cat_name_toggle.clone()) {
+                                                            set_expanded_category.set(None);
+                                                        } else {
+                                                            set_expanded_category.set(Some(cat_name_toggle.clone()));
+                                                        }
+                                                    }
+                                                    on_cf_select=move |name| on_cf_select(name)
+                                                />
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_any()
+                            },
+                            Err(e) => view! {
+                                <div class="text-red-400">"Error loading categories: "{e.clone()}</div>
+                            }.into_any(),
+                        }
+                    })
+                }}
+            </Suspense>
+        </div>
+    }
+}
+
+#[component]
+fn SchemaDetailView(
+    cf_name: String,
+    on_back: impl Fn() + 'static,
+) -> impl IntoView {
+    let name = cf_name.clone();
+    let schema = LocalResource::new(move || {
+        let n = name.clone();
+        async move { fetch_cf_schema(&n).await }
+    });
+
+    view! {
+        <div class="bg-slate-800 rounded-lg p-6">
+            <button
+                class="mb-4 text-blue-400 hover:underline flex items-center gap-1"
+                on:click=move |_| on_back()
+            >
+                "< Back to Schema Browser"
+            </button>
+
+            <Suspense fallback=move || view! {
+                <div class="text-gray-400">"Loading schema details..."</div>
+            }>
+                {move || {
+                    schema.get().map(|result| {
+                        match result.as_ref() {
+                            Ok(s) => {
+                                let name = s.name.clone();
+                                let category = s.category.clone();
+                                let purpose = s.purpose.clone();
+                                let key = s.key.clone();
+                                let value = s.value.clone();
+                                let relationships = s.relationships.clone();
+
+                                view! {
+                                    <div class="space-y-6">
+                                        // Header
+                                        <div>
+                                            <div class="flex items-center gap-3 mb-2">
+                                                <h2 class="text-2xl font-bold font-mono text-white">{name}</h2>
+                                                <span class="px-2 py-1 text-xs bg-slate-600 rounded text-gray-300 capitalize">
+                                                    {category}
+                                                </span>
+                                            </div>
+                                            <p class="text-gray-300">{purpose}</p>
+                                        </div>
+
+                                        // Key Encoding Section
+                                        <div class="bg-slate-900 rounded-lg p-4">
+                                            <h3 class="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                                                <span class="text-blue-400">"KEY"</span>
+                                                " Encoding"
+                                            </h3>
+                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                                <div>
+                                                    <p class="text-sm text-gray-400 mb-1">"Rust Type"</p>
+                                                    <code class="text-sm font-mono text-green-400 bg-slate-800 px-2 py-1 rounded">
+                                                        {key.rust_type.clone()}
+                                                    </code>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm text-gray-400 mb-1">"Encoding"</p>
+                                                    <code class="text-sm font-mono text-yellow-400 bg-slate-800 px-2 py-1 rounded">
+                                                        {key.encoding.clone()}
+                                                    </code>
+                                                </div>
+                                                {key.size_bytes.map(|size| view! {
+                                                    <div>
+                                                        <p class="text-sm text-gray-400 mb-1">"Size"</p>
+                                                        <code class="text-sm font-mono text-purple-400 bg-slate-800 px-2 py-1 rounded">
+                                                            {size}" bytes"
+                                                        </code>
+                                                    </div>
+                                                })}
+                                            </div>
+                                            <div class="mb-4">
+                                                <p class="text-sm text-gray-400 mb-1">"Description"</p>
+                                                <p class="text-sm text-gray-300">{key.description.clone()}</p>
+                                            </div>
+                                            <div class="bg-slate-950 rounded p-3">
+                                                <p class="text-xs text-gray-400 mb-2">"Example"</p>
+                                                <div class="space-y-1">
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs text-gray-500 w-16">"Raw:"</span>
+                                                        <code class="text-xs font-mono text-gray-300 break-all">
+                                                            {key.example_raw.clone()}
+                                                        </code>
+                                                    </div>
+                                                    <div class="flex items-start gap-2">
+                                                        <span class="text-xs text-gray-500 w-16">"Decoded:"</span>
+                                                        <code class="text-xs font-mono text-blue-300 break-all">
+                                                            {key.example_decoded.clone()}
+                                                        </code>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        // Value Serialization Section
+                                        <div class="bg-slate-900 rounded-lg p-4">
+                                            <h3 class="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                                                <span class="text-purple-400">"VALUE"</span>
+                                                " Serialization"
+                                            </h3>
+                                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                                <div>
+                                                    <p class="text-sm text-gray-400 mb-1">"Rust Type"</p>
+                                                    <code class="text-sm font-mono text-green-400 bg-slate-800 px-2 py-1 rounded">
+                                                        {value.rust_type.clone()}
+                                                    </code>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm text-gray-400 mb-1">"Encoding"</p>
+                                                    <code class="text-sm font-mono text-yellow-400 bg-slate-800 px-2 py-1 rounded">
+                                                        {value.encoding.clone()}
+                                                    </code>
+                                                </div>
+                                            </div>
+                                            <div class="mb-4">
+                                                <p class="text-sm text-gray-400 mb-1">"Description"</p>
+                                                <p class="text-sm text-gray-300">{value.description.clone()}</p>
+                                            </div>
+
+                                            // Fields table
+                                            {if !value.fields.is_empty() {
+                                                let fields = value.fields.clone();
+                                                view! {
+                                                    <div>
+                                                        <p class="text-sm text-gray-400 mb-2">"Fields"</p>
+                                                        <div class="bg-slate-950 rounded overflow-hidden">
+                                                            <table class="w-full text-sm">
+                                                                <thead class="bg-slate-800">
+                                                                    <tr>
+                                                                        <th class="px-3 py-2 text-left text-gray-400 font-medium">"Name"</th>
+                                                                        <th class="px-3 py-2 text-left text-gray-400 font-medium">"Type"</th>
+                                                                        <th class="px-3 py-2 text-left text-gray-400 font-medium">"Description"</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody class="divide-y divide-slate-800">
+                                                                    {fields.into_iter().map(|f| {
+                                                                        view! {
+                                                                            <tr>
+                                                                                <td class="px-3 py-2 font-mono text-blue-300">{f.name}</td>
+                                                                                <td class="px-3 py-2 font-mono text-green-300">{f.rust_type}</td>
+                                                                                <td class="px-3 py-2 text-gray-300">{f.description}</td>
+                                                                            </tr>
+                                                                        }
+                                                                    }).collect::<Vec<_>>()}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                }.into_any()
+                                            } else {
+                                                view! { <div></div> }.into_any()
+                                            }}
+                                        </div>
+
+                                        // Relationships Section
+                                        {if !relationships.is_empty() {
+                                            let rels = relationships.clone();
+                                            view! {
+                                                <div class="bg-slate-900 rounded-lg p-4">
+                                                    <h3 class="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                                                        <span class="text-cyan-400">"RELATIONSHIPS"</span>
+                                                    </h3>
+                                                    <div class="space-y-3">
+                                                        {rels.into_iter().map(|rel| {
+                                                            let rel_type_color = match rel.relationship_type.as_str() {
+                                                                "inverse" => "text-yellow-400",
+                                                                "references" => "text-blue-400",
+                                                                "contains" => "text-green-400",
+                                                                "indexed_by" => "text-purple-400",
+                                                                _ => "text-gray-400",
+                                                            };
+                                                            view! {
+                                                                <div class="flex items-start gap-3 bg-slate-950 rounded p-3">
+                                                                    <span class={format!("text-sm font-mono {}", rel_type_color)}>
+                                                                        {rel.relationship_type}
+                                                                    </span>
+                                                                    <span class="text-gray-500">"→"</span>
+                                                                    <div>
+                                                                        <code class="font-mono text-sm text-blue-300">
+                                                                            {rel.target_cf}
+                                                                        </code>
+                                                                        <p class="text-sm text-gray-400 mt-1">
+                                                                            {rel.description}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            }
+                                                        }).collect::<Vec<_>>()}
+                                                    </div>
+                                                </div>
+                                            }.into_any()
+                                        } else {
+                                            view! { <div></div> }.into_any()
+                                        }}
+                                    </div>
+                                }.into_any()
+                            },
+                            Err(e) => view! {
+                                <div class="text-red-400">"Error loading schema: "{e.clone()}</div>
+                            }.into_any(),
+                        }
+                    })
+                }}
+            </Suspense>
+        </div>
+    }
+}
+
 #[component]
 fn App() -> impl IntoView {
     let (page, set_page) = signal::<Page>(Page::BlockList);
@@ -1654,6 +2668,16 @@ fn App() -> impl IntoView {
                                 label="Advanced"
                                 active=matches!(page.get(), Page::AdvancedFilters)
                                 on_click=move || set_page.set(Page::AdvancedFilters)
+                            />
+                            <NavItem
+                                label="Raw Data"
+                                active=matches!(page.get(), Page::RawData | Page::RawKeyDetail { .. })
+                                on_click=move || set_page.set(Page::RawData)
+                            />
+                            <NavItem
+                                label="Schema"
+                                active=matches!(page.get(), Page::Schema | Page::SchemaDetail { .. })
+                                on_click=move || set_page.set(Page::Schema)
                             />
                         </div>
                     </div>
@@ -1708,6 +2732,29 @@ fn App() -> impl IntoView {
                             Page::AdvancedFilters => view! {
                                 <AdvancedFiltersView
                                     on_tx_select=move |(bn, idx)| set_page.set(Page::TransactionDetail { block_number: bn, tx_index: idx as usize })
+                                />
+                            }.into_any(),
+                            Page::RawData => view! {
+                                <RawDataView
+                                    on_key_select=move |(cf, key)| set_page.set(Page::RawKeyDetail { cf_name: cf, key_hex: key })
+                                />
+                            }.into_any(),
+                            Page::RawKeyDetail { cf_name, key_hex } => view! {
+                                <RawKeyDetailView
+                                    cf_name=cf_name.clone()
+                                    key_hex=key_hex.clone()
+                                    on_back=move || set_page.set(Page::RawData)
+                                />
+                            }.into_any(),
+                            Page::Schema => view! {
+                                <SchemaView
+                                    on_cf_select=move |name| set_page.set(Page::SchemaDetail { cf_name: name })
+                                />
+                            }.into_any(),
+                            Page::SchemaDetail { cf_name } => view! {
+                                <SchemaDetailView
+                                    cf_name=cf_name.clone()
+                                    on_back=move || set_page.set(Page::Schema)
                                 />
                             }.into_any(),
                         }
