@@ -3,10 +3,10 @@ use visualizer_types::{
     BlockDetail, BlockListResponse, BlockSummary, ClassListResponse, ClassResponse,
     ColumnFamilyInfo, ColumnFamilyListResponse, ColumnFamilySchemaInfo,
     ContractListResponse, ContractResponse, ContractStorageResponse, FilteredTransactionsResponse,
-    IndexStatusResponse, IndexedTransactionInfo, KeyListResponse, RawKeyValueResponse,
-    SchemaCategoriesResponse, SchemaCategoryInfo, SchemaColumnFamiliesResponse, SearchResponse,
-    StateDiffResponse, StatsResponse, TransactionDetail, TransactionListResponse,
-    TransactionSummary,
+    IndexStatusResponse, IndexedTransactionInfo, KeyListResponse, QueryRequest, QueryResult,
+    RawKeyValueResponse, SchemaCategoriesResponse, SchemaCategoryInfo, SchemaColumnFamiliesResponse,
+    SearchResponse, StateDiffResponse, StatsResponse, TableInfo, TableListResponse,
+    TransactionDetail, TransactionListResponse, TransactionSummary,
 };
 use wasm_bindgen::prelude::*;
 
@@ -294,6 +294,36 @@ async fn fetch_schema_column_families(category: Option<&str>) -> Result<SchemaCo
         .map_err(|e| e.to_string())
 }
 
+// SQL Console API functions
+
+async fn fetch_index_tables() -> Result<TableListResponse, String> {
+    gloo_net::http::Request::get(&format!("{API_BASE}/api/index/tables"))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn execute_sql_query(sql: String, params: Vec<String>) -> Result<QueryResult, String> {
+    let request = QueryRequest { sql, params };
+    let response = gloo_net::http::Request::post(&format!("{API_BASE}/api/index/query"))
+        .header("Content-Type", "application/json")
+        .body(serde_json::to_string(&request).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(error_text)
+    }
+}
+
 fn truncate_hash(hash: &str) -> String {
     if hash.len() > 16 {
         format!("{}...{}", &hash[..10], &hash[hash.len()-6..])
@@ -353,6 +383,7 @@ enum Page {
     RawKeyDetail { cf_name: String, key_hex: String },
     Schema,
     SchemaDetail { cf_name: String },
+    SqlConsole,
 }
 
 #[component]
@@ -2623,6 +2654,360 @@ fn SchemaDetailView(
     }
 }
 
+// SQL Console View Component
+
+/// Component to display a single table's schema in the sidebar
+#[component]
+fn TableSchemaItem(
+    table: TableInfo,
+    is_expanded: bool,
+    on_toggle: impl Fn() + 'static,
+    on_insert_template: impl Fn(String) + Clone + Send + 'static,
+) -> impl IntoView {
+    let table_name = table.name.clone();
+    let table_name_for_template = table.name.clone();
+    let columns = table.columns.clone();
+    let row_count = table.row_count;
+
+    view! {
+        <div class="border-b border-slate-700 last:border-b-0">
+            <button
+                class="w-full px-3 py-2 text-left hover:bg-slate-700 flex items-center justify-between text-sm"
+                on:click=move |_| on_toggle()
+            >
+                <div class="flex items-center gap-2">
+                    <span class="text-gray-400 text-xs">
+                        {if is_expanded { "[-]" } else { "[+]" }}
+                    </span>
+                    <span class="font-mono text-blue-400">{table_name.clone()}</span>
+                </div>
+                <span class="text-gray-500 text-xs">{row_count}" rows"</span>
+            </button>
+            {move || {
+                if is_expanded {
+                    let cols = columns.clone();
+                    let on_insert = on_insert_template.clone();
+                    let tname = table_name_for_template.clone();
+                    view! {
+                        <div class="px-3 pb-2 space-y-1">
+                            <div class="bg-slate-900 rounded p-2 text-xs space-y-1">
+                                {cols.into_iter().map(|col| {
+                                    view! {
+                                        <div class="flex items-center justify-between">
+                                            <span class="font-mono text-gray-300">{col.name}</span>
+                                            <span class="text-gray-500">{col.data_type}</span>
+                                        </div>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </div>
+                            <button
+                                class="w-full px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 rounded text-gray-300"
+                                on:click=move |_| on_insert(tname.clone())
+                            >
+                                "Insert SELECT template"
+                            </button>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <div></div> }.into_any()
+                }
+            }}
+        </div>
+    }
+}
+
+/// Format a JSON value for display in the results table
+fn format_json_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "NULL".to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(arr) => serde_json::to_string(arr).unwrap_or_else(|_| "[]".to_string()),
+        serde_json::Value::Object(obj) => serde_json::to_string(obj).unwrap_or_else(|_| "{}".to_string()),
+    }
+}
+
+#[component]
+fn SqlConsoleView() -> impl IntoView {
+    // SQL query input state
+    let (sql_input, set_sql_input) = signal(String::new());
+    let (is_executing, set_is_executing) = signal(false);
+    let (error, set_error) = signal::<Option<String>>(None);
+    let (result, set_result) = signal::<Option<QueryResult>>(None);
+    let (expanded_table, set_expanded_table) = signal::<Option<String>>(None);
+
+    // Fetch tables list
+    let tables = LocalResource::new(|| fetch_index_tables());
+
+    // Execute query handler
+    let execute_query = move || {
+        let sql = sql_input.get();
+        if sql.trim().is_empty() {
+            set_error.set(Some("Please enter a SQL query".to_string()));
+            return;
+        }
+
+        set_is_executing.set(true);
+        set_error.set(None);
+        set_result.set(None);
+
+        leptos::task::spawn_local(async move {
+            match execute_sql_query(sql, vec![]).await {
+                Ok(query_result) => {
+                    set_result.set(Some(query_result));
+                    set_error.set(None);
+                }
+                Err(e) => {
+                    set_error.set(Some(e));
+                    set_result.set(None);
+                }
+            }
+            set_is_executing.set(false);
+        });
+    };
+
+    // Copy results as JSON
+    let copy_results_json = move || {
+        if let Some(res) = result.get() {
+            let json_data = serde_json::json!({
+                "columns": res.columns,
+                "rows": res.rows,
+                "row_count": res.row_count,
+                "truncated": res.truncated
+            });
+            if let Ok(json_str) = serde_json::to_string_pretty(&json_data) {
+                copy_to_clipboard(&json_str);
+            }
+        }
+    };
+
+    view! {
+        <div class="flex gap-4 h-full">
+            // Left sidebar - Tables schema
+            <div class="w-64 flex-shrink-0 bg-slate-800 rounded-lg overflow-hidden flex flex-col">
+                <div class="px-4 py-3 bg-slate-700 border-b border-slate-600">
+                    <h3 class="font-semibold text-white">"Indexed Tables"</h3>
+                </div>
+                <div class="flex-1 overflow-y-auto">
+                    <Suspense fallback=move || view! {
+                        <div class="p-4 text-gray-400 text-sm">"Loading tables..."</div>
+                    }>
+                        {move || {
+                            tables.get().map(|result| {
+                                match result.as_ref() {
+                                    Ok(data) => {
+                                        let table_list = data.tables.clone();
+                                        if table_list.is_empty() {
+                                            view! {
+                                                <div class="p-4 text-gray-500 text-sm">"No indexed tables found"</div>
+                                            }.into_any()
+                                        } else {
+                                            view! {
+                                                <div>
+                                                    {table_list.into_iter().map(|table| {
+                                                        let table_name = table.name.clone();
+                                                        let table_name_check = table.name.clone();
+                                                        let is_exp = move || expanded_table.get() == Some(table_name_check.clone());
+                                                        view! {
+                                                            <TableSchemaItem
+                                                                table=table
+                                                                is_expanded=is_exp()
+                                                                on_toggle=move || {
+                                                                    if expanded_table.get() == Some(table_name.clone()) {
+                                                                        set_expanded_table.set(None);
+                                                                    } else {
+                                                                        set_expanded_table.set(Some(table_name.clone()));
+                                                                    }
+                                                                }
+                                                                on_insert_template=move |name| {
+                                                                    set_sql_input.set(format!("SELECT * FROM {} LIMIT 10", name));
+                                                                }
+                                                            />
+                                                        }
+                                                    }).collect::<Vec<_>>()}
+                                                </div>
+                                            }.into_any()
+                                        }
+                                    },
+                                    Err(e) => view! {
+                                        <div class="p-4 text-red-400 text-sm">"Error: "{e.clone()}</div>
+                                    }.into_any(),
+                                }
+                            })
+                        }}
+                    </Suspense>
+                </div>
+            </div>
+
+            // Main content area
+            <div class="flex-1 flex flex-col gap-4">
+                // Query input area
+                <div class="bg-slate-800 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-xl font-bold text-white">"SQL Console"</h2>
+                        <div class="text-gray-400 text-sm">
+                            "Query the SQLite index database"
+                        </div>
+                    </div>
+
+                    // SQL textarea
+                    <div class="mb-3">
+                        <textarea
+                            class="w-full h-32 px-4 py-3 bg-slate-900 rounded-lg font-mono text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                            placeholder="Enter SQL query here... e.g., SELECT * FROM transactions WHERE status = 'REVERTED' LIMIT 10"
+                            prop:value=move || sql_input.get()
+                            on:input=move |ev| set_sql_input.set(event_target_value(&ev))
+                            on:keydown=move |ev| {
+                                // Ctrl+Enter or Cmd+Enter to execute
+                                if (ev.ctrl_key() || ev.meta_key()) && ev.key() == "Enter" {
+                                    execute_query();
+                                }
+                            }
+                        ></textarea>
+                    </div>
+
+                    // Execute button and hints
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <button
+                                class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed rounded font-medium text-white transition-colors"
+                                disabled=move || is_executing.get()
+                                on:click=move |_| execute_query()
+                            >
+                                {move || if is_executing.get() { "Executing..." } else { "Execute" }}
+                            </button>
+                            <span class="text-gray-500 text-sm">"Ctrl+Enter to run"</span>
+                        </div>
+                        {move || result.get().map(|_| {
+                            view! {
+                                <button
+                                    class="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm text-gray-300"
+                                    on:click=move |_| copy_results_json()
+                                >
+                                    "Copy as JSON"
+                                </button>
+                            }
+                        })}
+                    </div>
+                </div>
+
+                // Error display
+                {move || error.get().map(|e| {
+                    view! {
+                        <div class="bg-red-900/30 border border-red-700 rounded-lg p-4">
+                            <div class="flex items-start gap-3">
+                                <span class="text-red-400 font-bold">"Error:"</span>
+                                <pre class="text-red-300 text-sm font-mono whitespace-pre-wrap break-all">{e}</pre>
+                            </div>
+                        </div>
+                    }
+                })}
+
+                // Results area
+                {move || result.get().map(|res| {
+                    let columns = res.columns.clone();
+                    let rows = res.rows.clone();
+                    let row_count = res.row_count;
+                    let truncated = res.truncated;
+
+                    view! {
+                        <div class="bg-slate-800 rounded-lg flex-1 flex flex-col overflow-hidden">
+                            // Results header
+                            <div class="px-4 py-3 bg-slate-700 border-b border-slate-600 flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <span class="font-semibold text-white">"Results"</span>
+                                    <span class="text-gray-400 text-sm">
+                                        {row_count}" row"{if row_count == 1 { "" } else { "s" }}
+                                    </span>
+                                </div>
+                                {if truncated {
+                                    view! {
+                                        <span class="px-2 py-1 bg-yellow-600/30 text-yellow-400 text-xs rounded">
+                                            "Results truncated"
+                                        </span>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
+                            </div>
+
+                            // Results table
+                            {if rows.is_empty() {
+                                view! {
+                                    <div class="p-4 text-gray-500 text-center">"No results"</div>
+                                }.into_any()
+                            } else {
+                                view! {
+                                    <div class="flex-1 overflow-auto">
+                                        <table class="w-full text-left">
+                                            <thead class="bg-slate-900 sticky top-0">
+                                                <tr>
+                                                    {columns.clone().into_iter().map(|col| {
+                                                        view! {
+                                                            <th class="px-3 py-2 text-gray-400 font-medium text-sm border-b border-slate-700 whitespace-nowrap">
+                                                                {col}
+                                                            </th>
+                                                        }
+                                                    }).collect::<Vec<_>>()}
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-slate-700">
+                                                {rows.into_iter().enumerate().map(|(idx, row)| {
+                                                    let row_class = if idx % 2 == 0 {
+                                                        "bg-slate-800"
+                                                    } else {
+                                                        "bg-slate-800/50"
+                                                    };
+                                                    view! {
+                                                        <tr class=row_class>
+                                                            {row.into_iter().map(|cell| {
+                                                                let formatted = format_json_value(&cell);
+                                                                let formatted_clone = formatted.clone();
+                                                                let is_null = matches!(cell, serde_json::Value::Null);
+                                                                let cell_class = if is_null {
+                                                                    "px-3 py-2 font-mono text-sm text-gray-500 italic"
+                                                                } else {
+                                                                    "px-3 py-2 font-mono text-sm text-gray-300"
+                                                                };
+                                                                view! {
+                                                                    <td class=cell_class title=formatted>
+                                                                        <div class="max-w-xs truncate">{formatted_clone}</div>
+                                                                    </td>
+                                                                }
+                                                            }).collect::<Vec<_>>()}
+                                                        </tr>
+                                                    }
+                                                }).collect::<Vec<_>>()}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }.into_any()
+                            }}
+                        </div>
+                    }
+                })}
+
+                // Empty state when no query has been run
+                {move || {
+                    if result.get().is_none() && error.get().is_none() {
+                        view! {
+                            <div class="bg-slate-800 rounded-lg flex-1 flex items-center justify-center">
+                                <div class="text-center text-gray-500">
+                                    <p class="text-lg mb-2">"Enter a SQL query and click Execute"</p>
+                                    <p class="text-sm">"Click on a table name in the sidebar to insert a SELECT template"</p>
+                                </div>
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! { <div></div> }.into_any()
+                    }
+                }}
+            </div>
+        </div>
+    }
+}
+
 #[component]
 fn App() -> impl IntoView {
     let (page, set_page) = signal::<Page>(Page::BlockList);
@@ -2678,6 +3063,11 @@ fn App() -> impl IntoView {
                                 label="Schema"
                                 active=matches!(page.get(), Page::Schema | Page::SchemaDetail { .. })
                                 on_click=move || set_page.set(Page::Schema)
+                            />
+                            <NavItem
+                                label="SQL Console"
+                                active=matches!(page.get(), Page::SqlConsole)
+                                on_click=move || set_page.set(Page::SqlConsole)
                             />
                         </div>
                     </div>
@@ -2756,6 +3146,9 @@ fn App() -> impl IntoView {
                                     cf_name=cf_name.clone()
                                     on_back=move || set_page.set(Page::Schema)
                                 />
+                            }.into_any(),
+                            Page::SqlConsole => view! {
+                                <SqlConsoleView />
                             }.into_any(),
                         }
                     }}
