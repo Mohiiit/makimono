@@ -12,7 +12,7 @@ use visualizer_types::{
 use wasm_bindgen::prelude::*;
 
 // Default API URL for deployed version (Render.com free tier)
-const DEFAULT_API_URL: &str = "https://madara-db-visualizer-api.onrender.com";
+const DEFAULT_API_URL: &str = "https://madara-db-visualizer.onrender.com";
 
 static API_BASE: OnceLock<String> = OnceLock::new();
 
