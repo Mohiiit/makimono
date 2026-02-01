@@ -5,8 +5,40 @@ use visualizer_types::{
     HealthResponse, IndexStatusResponse, IndexedTransactionInfo, SearchResponse, StateDiffResponse,
     StatsResponse, TransactionDetail, TransactionListResponse, TransactionSummary,
 };
+use wasm_bindgen::prelude::*;
 
 const API_BASE: &str = "http://localhost:3000";
+
+fn download_json(data: &str, filename: &str) {
+    if let Some(window) = web_sys::window() {
+        if let Some(document) = window.document() {
+            if let Ok(a) = document.create_element("a") {
+                let mut blob_options = web_sys::BlobPropertyBag::new();
+                blob_options.set_type("application/json");
+                if let Ok(blob) = web_sys::Blob::new_with_str_sequence_and_options(
+                    &js_sys::Array::of1(&JsValue::from_str(data)),
+                    &blob_options,
+                ) {
+                    if let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) {
+                        let _ = a.set_attribute("href", &url);
+                        let _ = a.set_attribute("download", filename);
+                        if let Ok(a) = a.dyn_into::<web_sys::HtmlElement>() {
+                            a.click();
+                        }
+                        let _ = web_sys::Url::revoke_object_url(&url);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn copy_to_clipboard(text: &str) {
+    if let Some(window) = web_sys::window() {
+        let clipboard = window.navigator().clipboard();
+        let _ = clipboard.write_text(text);
+    }
+}
 
 async fn fetch_health() -> Result<HealthResponse, String> {
     gloo_net::http::Request::get(&format!("{API_BASE}/api/health"))
@@ -181,6 +213,41 @@ fn truncate_hash(hash: &str) -> String {
     }
 }
 
+#[component]
+fn CopyButton(text: String) -> impl IntoView {
+    let (copied, set_copied) = signal(false);
+    let text_clone = text.clone();
+    view! {
+        <button
+            class="ml-2 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-400 hover:text-white"
+            on:click=move |_| {
+                copy_to_clipboard(&text_clone);
+                set_copied.set(true);
+                // Reset after 2 seconds
+                let set_copied = set_copied.clone();
+                leptos::task::spawn_local(async move {
+                    gloo_timers::future::TimeoutFuture::new(2000).await;
+                    set_copied.set(false);
+                });
+            }
+        >
+            {move || if copied.get() { "Copied!" } else { "Copy" }}
+        </button>
+    }
+}
+
+#[component]
+fn ExportButton(data: String, filename: String) -> impl IntoView {
+    view! {
+        <button
+            class="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 rounded text-white"
+            on:click=move |_| download_json(&data, &filename)
+        >
+            "Export JSON"
+        </button>
+    }
+}
+
 /// Page state for navigation
 #[derive(Clone, Debug)]
 enum Page {
@@ -341,32 +408,53 @@ fn BlockDetailView(
                                 let on_state_diff = on_state_diff.clone();
                                 let block_num = b.block_number;
                                 let block_hash = b.block_hash.clone();
+                                let block_hash_copy = b.block_hash.clone();
                                 let parent_hash = b.parent_hash.clone();
+                                let parent_hash_copy = b.parent_hash.clone();
                                 let state_root = b.state_root.clone();
+                                let state_root_copy = b.state_root.clone();
                                 let sequencer = b.sequencer_address.clone();
+                                let sequencer_copy = b.sequencer_address.clone();
                                 let tx_count = b.transaction_count;
                                 let event_count = b.event_count;
                                 let gas_used = b.l2_gas_used;
+                                let export_data = serde_json::to_string_pretty(&*b).unwrap_or_default();
+                                let export_filename = format!("block_{}.json", block_num);
 
                                 view! {
                                     <div>
-                                        <h2 class="text-2xl font-bold mb-4">"Block #"{block_num}</h2>
-                                        <div class="grid grid-cols-2 gap-4">
+                                        <div class="flex justify-between items-center mb-4">
+                                            <h2 class="text-2xl font-bold">"Block #"{block_num}</h2>
+                                            <ExportButton data=export_data filename=export_filename />
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div>
                                                 <p class="text-gray-400">"Block Hash"</p>
-                                                <p class="font-mono text-sm break-all">{block_hash}</p>
+                                                <div class="flex items-center">
+                                                    <p class="font-mono text-sm break-all">{block_hash}</p>
+                                                    <CopyButton text=block_hash_copy />
+                                                </div>
                                             </div>
                                             <div>
                                                 <p class="text-gray-400">"Parent Hash"</p>
-                                                <p class="font-mono text-sm break-all">{parent_hash}</p>
+                                                <div class="flex items-center">
+                                                    <p class="font-mono text-sm break-all">{parent_hash}</p>
+                                                    <CopyButton text=parent_hash_copy />
+                                                </div>
                                             </div>
                                             <div>
                                                 <p class="text-gray-400">"State Root"</p>
-                                                <p class="font-mono text-sm break-all">{state_root}</p>
+                                                <div class="flex items-center">
+                                                    <p class="font-mono text-sm break-all">{state_root}</p>
+                                                    <CopyButton text=state_root_copy />
+                                                </div>
                                             </div>
                                             <div>
                                                 <p class="text-gray-400">"Sequencer"</p>
-                                                <p class="font-mono text-sm">{sequencer}</p>
+                                                <div class="flex items-center">
+                                                    <p class="font-mono text-sm">{sequencer}</p>
+                                                    <CopyButton text=sequencer_copy />
+                                                </div>
                                             </div>
                                             <div>
                                                 <p class="text-gray-400">"Transactions"</p>
@@ -469,6 +557,7 @@ fn TransactionDetailView(
                         match result.as_ref() {
                             Ok(t) => {
                                 let tx_hash = t.tx_hash.clone();
+                                let tx_hash_copy = t.tx_hash.clone();
                                 let tx_type = t.tx_type.clone();
                                 let status = t.status.clone();
                                 let revert_reason = t.revert_reason.clone();
@@ -477,11 +566,14 @@ fn TransactionDetailView(
                                 let actual_fee = t.actual_fee.clone();
                                 let fee_unit = t.fee_unit.clone();
                                 let sender = t.sender_address.clone();
+                                let sender_copy = t.sender_address.clone();
                                 let nonce = t.nonce.clone();
                                 let version = t.version.clone();
                                 let calldata = t.calldata.clone();
                                 let signature = t.signature.clone();
                                 let events = t.events.clone();
+                                let export_data = serde_json::to_string_pretty(&*t).unwrap_or_default();
+                                let export_filename = format!("tx_{}.json", truncate_hash(&t.tx_hash));
 
                                 let status_class = if status == "SUCCEEDED" {
                                     "text-green-400"
@@ -491,11 +583,17 @@ fn TransactionDetailView(
 
                                 view! {
                                     <div>
-                                        <h2 class="text-2xl font-bold mb-4">"Transaction"</h2>
-                                        <div class="grid grid-cols-2 gap-4 mb-6">
-                                            <div class="col-span-2">
+                                        <div class="flex justify-between items-center mb-4">
+                                            <h2 class="text-2xl font-bold">"Transaction"</h2>
+                                            <ExportButton data=export_data filename=export_filename />
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                            <div class="col-span-1 md:col-span-2">
                                                 <p class="text-gray-400">"Transaction Hash"</p>
-                                                <p class="font-mono text-sm break-all text-blue-400">{tx_hash}</p>
+                                                <div class="flex items-center flex-wrap">
+                                                    <p class="font-mono text-sm break-all text-blue-400">{tx_hash}</p>
+                                                    <CopyButton text=tx_hash_copy />
+                                                </div>
                                             </div>
                                             <div>
                                                 <p class="text-gray-400">"Block"</p>
@@ -523,11 +621,17 @@ fn TransactionDetailView(
                                                 <p class="text-gray-400">"Fee"</p>
                                                 <p class="font-mono">{actual_fee}" "{fee_unit}</p>
                                             </div>
-                                            {sender.map(|s| view! {
-                                                <div class="col-span-2">
-                                                    <p class="text-gray-400">"Sender Address"</p>
-                                                    <p class="font-mono text-sm break-all">{s}</p>
-                                                </div>
+                                            {sender.map(|s| {
+                                                let s_copy = sender_copy.clone().unwrap_or_default();
+                                                view! {
+                                                    <div class="col-span-1 md:col-span-2">
+                                                        <p class="text-gray-400">"Sender Address"</p>
+                                                        <div class="flex items-center flex-wrap">
+                                                            <p class="font-mono text-sm break-all">{s}</p>
+                                                            <CopyButton text=s_copy />
+                                                        </div>
+                                                    </div>
+                                                }
                                             })}
                                             {nonce.map(|n| view! {
                                                 <div>
@@ -1511,20 +1615,26 @@ fn App() -> impl IntoView {
 
     view! {
         <div class="min-h-screen bg-gray-900 text-white">
-            <header class="bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
-                <h1 class="text-2xl font-bold">"Madara DB Visualizer"</h1>
+            <header class="bg-gray-800 border-b border-gray-700 px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-3">
+                <h1 class="text-xl md:text-2xl font-bold">"Madara DB Visualizer"</h1>
                 <SearchBar on_result=move |p| set_page.set(p) />
             </header>
 
-            <div class="flex">
+            <div class="flex flex-col md:flex-row">
                 // Sidebar
-                <aside class="w-64 bg-gray-800 border-r border-gray-700 p-4 min-h-screen">
-                    <StatsCard />
-                    <IndexStatusCard />
+                <aside class="w-full md:w-64 bg-gray-800 border-b md:border-b-0 md:border-r border-gray-700 p-4 md:min-h-screen">
+                    <div class="flex md:block gap-4 overflow-x-auto md:overflow-visible">
+                        <div class="flex-shrink-0 md:mb-4">
+                            <StatsCard />
+                        </div>
+                        <div class="flex-shrink-0">
+                            <IndexStatusCard />
+                        </div>
+                    </div>
 
-                    <div class="mt-6">
+                    <div class="mt-4 md:mt-6">
                         <h3 class="text-sm font-semibold text-gray-400 mb-2">"NAVIGATION"</h3>
-                        <div class="flex flex-col space-y-1">
+                        <div class="flex md:flex-col space-x-2 md:space-x-0 md:space-y-1 overflow-x-auto">
                             <NavItem
                                 label="Blocks"
                                 active=matches!(page.get(), Page::BlockList | Page::BlockDetail { .. } | Page::TransactionDetail { .. } | Page::StateDiff { .. })
@@ -1550,7 +1660,7 @@ fn App() -> impl IntoView {
                 </aside>
 
                 // Main content
-                <main class="flex-1 p-6">
+                <main class="flex-1 p-4 md:p-6">
                     {move || {
                         match page.get() {
                             Page::BlockList => view! {
