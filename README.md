@@ -2,6 +2,36 @@
 
 A web-based **Database Inspector** for Madara's RocksDB - like pgAdmin but for blockchain storage. Understand how data is stored, inspect raw keys/values, and write custom SQL queries.
 
+## Screenshots
+
+### Block Explorer
+![Blocks View](docs/images/01-blocks-view.png)
+
+### Schema Browser - Self-Documenting Database Structure
+Browse all 27+ RocksDB column families with their key/value encoding documentation.
+
+![Schema Browser](docs/images/02-schema-browser.png)
+
+### Schema Detail - Key & Value Encoding
+See exactly how keys are encoded (u64 big-endian, Felt, etc.) and values are serialized (bincode, raw bytes).
+
+![Schema Detail - Key](docs/images/03-schema-detail.png)
+![Schema Detail - Value](docs/images/04-schema-value-section.png)
+
+### Raw Data Browser
+Inspect raw RocksDB key-value pairs in hex format with decoded hints.
+
+![Raw Data Browser](docs/images/05-raw-data-browser.png)
+![Raw Data Keys](docs/images/06-raw-data-keys.png)
+
+### SQL Console
+Write custom SQL queries against the indexed data (blocks, transactions, events, storage updates).
+
+![SQL Console](docs/images/07-sql-console.png)
+![SQL Results](docs/images/08-sql-results.png)
+
+---
+
 ## Features
 
 ### Database Inspector (New!)
