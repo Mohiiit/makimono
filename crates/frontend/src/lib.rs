@@ -2135,7 +2135,7 @@ fn IndexStatusCard() -> impl IntoView {
     let status = LocalResource::new(|| fetch_index_status());
 
     view! {
-        <div class="bg-gray-800 rounded-lg p-4 mt-4">
+        <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-4">
             <h2 class="text-lg font-semibold mb-3">"Index Status"</h2>
             <Suspense fallback=move || view! { <p class="text-gray-400">"Loading..."</p> }>
                 {move || {
@@ -2194,7 +2194,7 @@ fn StatsCard() -> impl IntoView {
     let stats = LocalResource::new(|| fetch_stats());
 
     view! {
-        <div class="bg-gray-800 rounded-lg p-4">
+        <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-4">
             <h2 class="text-lg font-semibold mb-3">"Database Stats"</h2>
             <Suspense fallback=move || view! { <p class="text-gray-400">"Loading..."</p> }>
                 {move || {
@@ -2277,14 +2277,15 @@ fn StatsCard() -> impl IntoView {
 #[component]
 fn NavItem(label: &'static str, active: bool, on_click: impl Fn() + 'static) -> impl IntoView {
     let class = if active {
-        "px-4 py-2 text-left hover:bg-gray-700 rounded text-blue-400 bg-gray-700"
+        "w-full px-3 py-2 text-left text-sm rounded-lg bg-slate-800/80 text-slate-50 ring-1 ring-slate-700/80 hover:bg-slate-800 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
     } else {
-        "px-4 py-2 text-left hover:bg-gray-700 rounded text-gray-300"
+        "w-full px-3 py-2 text-left text-sm rounded-lg text-slate-300 hover:bg-slate-800/60 hover:text-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
     };
 
     view! {
         <button
             class=class
+            type="button"
             on:click=move |_| on_click()
         >
             {label}
@@ -2359,28 +2360,30 @@ fn SearchBar(on_result: impl Fn(Page) + Clone + Send + 'static) -> impl IntoView
     }
 
     view! {
-        <div class="flex items-center gap-2">
-            <input
-                type="text"
-                placeholder="Search block, tx hash, contract..."
-                class="px-3 py-2 bg-gray-700 rounded text-sm w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                prop:value=move || query.get()
-                on:input=move |ev| set_query.set(event_target_value(&ev))
-                on:keypress=move |ev| {
-                    if ev.key() == "Enter" {
-                        set_trigger.update(|t| *t = t.wrapping_add(1));
+        <div class="w-full sm:w-auto">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full">
+                <input
+                    type="text"
+                    placeholder="Search block, tx hash, contract..."
+                    class="min-w-0 w-full sm:w-72 md:w-96 px-3 py-2 bg-slate-800/80 rounded-lg text-sm text-slate-100 placeholder:text-slate-400 ring-1 ring-slate-700/80 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    prop:value=move || query.get()
+                    on:input=move |ev| set_query.set(event_target_value(&ev))
+                    on:keypress=move |ev| {
+                        if ev.key() == "Enter" {
+                            set_trigger.update(|t| *t = t.wrapping_add(1));
+                        }
                     }
-                }
-            />
-            <button
-                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm disabled:opacity-50"
-                disabled=move || searching.get()
-                on:click=move |_| set_trigger.update(|t| *t = t.wrapping_add(1))
-            >
-                {move || if searching.get() { "..." } else { "Search" }}
-            </button>
+                />
+                <button
+                    class="shrink-0 px-4 py-2 bg-sky-600 hover:bg-sky-700 rounded-lg text-sm text-white disabled:opacity-50 transition-colors"
+                    disabled=move || searching.get()
+                    on:click=move |_| set_trigger.update(|t| *t = t.wrapping_add(1))
+                >
+                    {move || if searching.get() { "..." } else { "Search" }}
+                </button>
+            </div>
             {move || error.get().map(|e| view! {
-                <span class="text-red-400 text-sm">{e}</span>
+                <p class="mt-1 text-xs text-rose-300">{e}</p>
             })}
         </div>
     }
@@ -3129,27 +3132,28 @@ fn App() -> impl IntoView {
     let (page, set_page) = signal::<Page>(Page::BlockList);
 
     view! {
-        <div class="min-h-screen bg-gray-900 text-white">
-            <header class="bg-gray-800 border-b border-gray-700 px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row md:justify-between md:items-center gap-3">
-                <h1 class="text-xl md:text-2xl font-bold">"Madara DB Visualizer"</h1>
-                <SearchBar on_result=move |p| set_page.set(p) />
+        <div class="min-h-screen bg-slate-950 text-slate-100">
+            <header class="border-b border-slate-800 bg-slate-950/90 backdrop-blur">
+                <div class="mx-auto max-w-screen-2xl px-4 md:px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="flex items-baseline gap-3">
+                        <h1 class="text-xl sm:text-2xl font-semibold tracking-tight">"Madara DB Visualizer"</h1>
+                        <span class="hidden sm:inline text-sm text-slate-400">"RocksDB inspector"</span>
+                    </div>
+                    <SearchBar on_result=move |p| set_page.set(p) />
+                </div>
             </header>
 
-            <div class="flex flex-col md:flex-row">
+            <div class="mx-auto max-w-screen-2xl grid grid-cols-1 md:grid-cols-[18rem_1fr] gap-6 px-4 md:px-6 py-6">
                 // Sidebar
-                <aside class="w-full md:w-64 bg-gray-800 border-b md:border-b-0 md:border-r border-gray-700 p-4 md:min-h-screen">
-                    <div class="flex md:block gap-4 overflow-x-auto md:overflow-visible">
-                        <div class="flex-shrink-0 md:mb-4">
-                            <StatsCard />
-                        </div>
-                        <div class="flex-shrink-0">
-                            <IndexStatusCard />
-                        </div>
+                <aside class="rounded-2xl border border-slate-800 bg-slate-900/30 p-4 md:sticky md:top-6 h-fit">
+                    <div class="space-y-3">
+                        <StatsCard />
+                        <IndexStatusCard />
                     </div>
 
-                    <div class="mt-4 md:mt-6">
-                        <h3 class="text-sm font-semibold text-gray-400 mb-2">"NAVIGATION"</h3>
-                        <div class="flex md:flex-col space-x-2 md:space-x-0 md:space-y-1 overflow-x-auto">
+                    <div class="mt-6">
+                        <h3 class="text-xs font-semibold tracking-widest text-slate-400">"NAVIGATION"</h3>
+                        <div class="mt-2 space-y-1">
                             <NavItem
                                 label="Blocks"
                                 active=matches!(page.get(), Page::BlockList | Page::BlockDetail { .. } | Page::TransactionDetail { .. } | Page::StateDiff { .. })
@@ -3190,7 +3194,7 @@ fn App() -> impl IntoView {
                 </aside>
 
                 // Main content
-                <main class="flex-1 p-4 md:p-6">
+                <main class="min-w-0 rounded-2xl border border-slate-800 bg-slate-900/10 p-4 md:p-6">
                     {move || {
                         match page.get() {
                             Page::BlockList => view! {
