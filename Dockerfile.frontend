@@ -1,5 +1,16 @@
 # syntax=docker/dockerfile:1.7
 
+FROM node:20-bookworm-slim AS css
+
+WORKDIR /app
+
+COPY package.json package-lock.json tailwind.config.js ./
+COPY input.css index.html ./
+COPY crates/frontend/src ./crates/frontend/src
+
+RUN npm ci
+RUN npx tailwindcss -i ./input.css -o ./output.css
+
 FROM rust:1.89-slim-bookworm AS builder
 
 # Trunk builds the WASM bundle; binaryen provides wasm-opt for the data-wasm-opt="z" setting.
@@ -19,7 +30,8 @@ RUN cargo install trunk --locked --version "${TRUNK_VERSION}"
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock Trunk.toml index.html input.css output.css ./
+COPY Cargo.toml Cargo.lock Trunk.toml index.html input.css ./
+COPY --from=css /app/output.css ./output.css
 COPY crates ./crates
 COPY scripts ./scripts
 
