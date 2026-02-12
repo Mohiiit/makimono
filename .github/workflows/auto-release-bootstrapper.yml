@@ -37,29 +37,17 @@ jobs:
           fi
 
           # Read the bootstrapper version from Cargo.toml (workspace.package.version).
-          # Avoid tomllib/tomli dependency differences across GitHub runner images.
           ver_now="$(
-            python3 - <<'PY'
-import re
-from pathlib import Path
-
-txt = Path("Cargo.toml").read_text(encoding="utf-8")
-in_section = False
-for line in txt.splitlines():
-    s = line.strip()
-    if s == "[workspace.package]":
-        in_section = True
-        continue
-    if in_section and s.startswith("[") and s.endswith("]"):
-        break
-    if in_section:
-        m = re.match(r'^version\\s*=\\s*"([^"]+)"\\s*$', s)
-        if m:
-            print(m.group(1))
-            raise SystemExit(0)
-raise SystemExit("version not found under [workspace.package]")
-PY
+            awk '
+              $0=="[workspace.package]"{in_section=1;next}
+              in_section && $0 ~ /^\\[/{exit}
+              in_section && $1=="version"{gsub(/"/,"",$3); print $3; exit}
+            ' Cargo.toml
           )"
+          if [[ -z "$ver_now" ]]; then
+            echo "failed to parse [workspace.package].version from Cargo.toml" >&2
+            exit 1
+          fi
 
           # Determine what changed in this push.
           if [[ -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]]; then
@@ -73,24 +61,11 @@ PY
             # Compare previous version to current version.
             if [[ -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]]; then
               ver_before="$(
-                git show "${BEFORE}:Cargo.toml" | python3 - <<'PY'
-import re, sys
-txt = sys.stdin.read()
-in_section = False
-for line in txt.splitlines():
-    s = line.strip()
-    if s == "[workspace.package]":
-        in_section = True
-        continue
-    if in_section and s.startswith("[") and s.endswith("]"):
-        break
-    if in_section:
-        m = re.match(r'^version\\s*=\\s*"([^"]+)"\\s*$', s)
-        if m:
-            print(m.group(1))
-            raise SystemExit(0)
-print("")
-PY
+                git show "${BEFORE}:Cargo.toml" | awk '
+                  $0=="[workspace.package]"{in_section=1;next}
+                  in_section && $0 ~ /^\\[/{exit}
+                  in_section && $1=="version"{gsub(/"/,"",$3); print $3; exit}
+                '
               )"
             else
               ver_before=""
