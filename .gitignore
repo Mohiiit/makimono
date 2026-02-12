@@ -37,3 +37,4 @@ node_modules/
 # Screenshots during dev
 /screenshots/
 crates/frontend/target/
+crates/frontend/dist/

@@ -4,9 +4,9 @@ FROM node:20-bookworm-slim AS css
 
 WORKDIR /app
 
-COPY package.json package-lock.json tailwind.config.js ./
-COPY input.css index.html ./
-COPY crates/frontend/src ./crates/frontend/src
+COPY crates/frontend/package.json crates/frontend/package-lock.json crates/frontend/tailwind.config.js ./
+COPY crates/frontend/input.css crates/frontend/index.html ./
+COPY crates/frontend/src ./src
 
 RUN npm ci
 RUN npx tailwindcss -i ./input.css -o ./output.css
@@ -30,17 +30,19 @@ RUN cargo install trunk --locked --version "${TRUNK_VERSION}"
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock Trunk.toml index.html input.css ./
-COPY --from=css /app/output.css ./output.css
+COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY scripts ./scripts
 
-RUN trunk build --release
-RUN python3 /app/scripts/patch_wasm_table.py /app/dist
+COPY --from=css /app/output.css ./crates/frontend/output.css
+
+WORKDIR /app/crates/frontend
+RUN trunk build index.html --release
+RUN python3 /app/scripts/patch_wasm_table.py /app/crates/frontend/dist
 
 FROM nginx:1.27-alpine
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/crates/frontend/dist /usr/share/nginx/html
 
 EXPOSE 80

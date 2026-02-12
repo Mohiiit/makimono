@@ -5,7 +5,8 @@ set -euo pipefail
 # Requires: node/npm, rust toolchain with wasm32 target, trunk, python3.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$repo_root"
+frontend_dir="$repo_root/crates/frontend"
+cd "$frontend_dir"
 
 if ! command -v npm >/dev/null 2>&1; then
   echo "error: npm not found" >&2
@@ -27,7 +28,7 @@ fi
 
 rustup target add wasm32-unknown-unknown >/dev/null 2>&1 || true
 
-trunk build --release
-python3 ./scripts/patch_wasm_table.py ./dist
+trunk build index.html --release
+python3 "$repo_root/scripts/patch_wasm_table.py" ./dist
 
-echo "dist ready at ./dist"
+echo "dist ready at $frontend_dir/dist"

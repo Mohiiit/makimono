@@ -3,7 +3,7 @@ target = "index.html"
 dist = "dist"
 
 [watch]
-watch = ["crates/frontend/src", "index.html", "input.css"]
+watch = ["src", "index.html", "input.css", "output.css"]
 
 [serve]
 port = 8080

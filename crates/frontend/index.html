@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Madara DB Visualizer</title>
-    <!-- TailwindCSS via CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link data-trunk rel="css" href="output.css">
+    <!-- wasm-opt can sometimes over-optimize table limits and cause runtime `WebAssembly.Table.grow()` failures.
+         Keep it disabled for reliability; we can re-enable once we have a known-good setting. -->
+    <link data-trunk rel="rust" href="Cargo.toml">
 </head>
 <body>
-    <link data-trunk rel="rust" data-wasm-opt="z" />
 </body>
 </html>

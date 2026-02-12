@@ -20,6 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: crates/frontend/package-lock.json
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -27,6 +34,12 @@ jobs:
 
       - name: Install Trunk
         run: cargo install trunk --locked --version 0.20.3
+
+      - name: Build CSS (Tailwind)
+        run: |
+          cd crates/frontend
+          npm ci
+          npx tailwindcss -i ./input.css -o ./output.css
 
       - name: Build Frontend
         run: |

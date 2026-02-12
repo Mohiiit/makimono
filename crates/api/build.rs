@@ -18,7 +18,7 @@ fn main() {
     let dist = env::var("MAKIMONO_DIST_DIR")
         .ok()
         .map(PathBuf::from)
-        .unwrap_or_else(|| repo_root.join("dist"));
+        .unwrap_or_else(|| repo_root.join("crates").join("frontend").join("dist"));
 
     println!("cargo:rerun-if-env-changed=MAKIMONO_DIST_DIR");
     println!("cargo:rerun-if-changed={}", dist.display());

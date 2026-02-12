@@ -1,4 +1,5 @@
 use clap::Parser;
+use axum::http::StatusCode;
 use db_reader::DbReader;
 use directories::ProjectDirs;
 use indexer::Indexer;
@@ -81,9 +82,17 @@ async fn main() {
     // Build API router (no CORS needed for same-origin).
     let api_router = api::build_router(state.clone(), None);
 
-    // Serve embedded static UI for everything else.
+    // Serve embedded UI for non-API routes.
+    // Important: don't "SPA-fallback" under `/api/*` because that hides real 404s from API clients.
     let app = api_router.fallback(axum::routing::get(|uri: axum::http::Uri| async move {
-        api::embedded::response_for_uri(&uri)
+        if uri.path().starts_with("/api/") {
+            axum::http::Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(axum::body::Body::from("not found"))
+                .unwrap()
+        } else {
+            api::embedded::response_for_uri(&uri)
+        }
     }));
 
     let addr = format!("{}:{}", args.host, args.port);

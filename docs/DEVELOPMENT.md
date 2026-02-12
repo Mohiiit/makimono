@@ -25,6 +25,12 @@ Single-port server (UI + API) with embedded assets:
 cargo build -p api --release --features embedded-ui --bin makimono-viz
 ```
 
+Frontend-only (for UI work):
+```bash
+cd crates/frontend
+trunk serve index.html --port 8080
+```
+
 ## Run
 
 ```bash

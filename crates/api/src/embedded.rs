@@ -4,8 +4,8 @@ use bytes::Bytes;
 use include_dir::{include_dir, Dir};
 
 // `include_dir!` requires a string literal (it supports `$CARGO_MANIFEST_DIR`), so we embed the
-// workspace-level `dist/` directory after it has been built via `scripts/build_dist.sh`.
-static DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../dist");
+// `crates/frontend/dist/` directory after it has been built via `scripts/build_dist.sh`.
+static DIST: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../frontend/dist");
 
 pub fn response_for_uri(uri: &Uri) -> Response<Body> {
     // Normalize path.
