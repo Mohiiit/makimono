@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-label="Makimono scroll logo">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f3e7cf"/>
+      <stop offset="0.5" stop-color="#f8f0dc"/>
+      <stop offset="1" stop-color="#f1e0c0"/>
+    </linearGradient>
+    <linearGradient id="shadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-40%" width="140%" height="180%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="b"/>
+      <feOffset dx="0" dy="10" result="o"/>
+      <feColorMatrix in="o" type="matrix"
+        values="0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0 0
+                0 0 0 0.25 0" result="s"/>
+      <feMerge>
+        <feMergeNode in="s"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Transparent background by design (GitHub README friendly) -->
+
+  <g filter="url(#soft)" transform="translate(110 92)">
+    <!-- Paper body -->
+    <rect x="110" y="18" width="760" height="200" rx="44" fill="url(#paper)" stroke="#b99a67" stroke-width="8"/>
+
+    <!-- Subtle top shadow -->
+    <rect x="130" y="28" width="720" height="26" rx="13" fill="url(#shadow)" opacity="0.55"/>
+
+    <!-- Left roll -->
+    <g>
+      <circle cx="110" cy="118" r="86" fill="#e7d2ad" stroke="#b99a67" stroke-width="8"/>
+      <circle cx="110" cy="118" r="26" fill="#c8ab7a" opacity="0.85"/>
+    </g>
+
+    <!-- Right roll -->
+    <g>
+      <circle cx="870" cy="118" r="86" fill="#e7d2ad" stroke="#b99a67" stroke-width="8"/>
+      <circle cx="870" cy="118" r="26" fill="#c8ab7a" opacity="0.85"/>
+    </g>
+
+    <!-- Seal -->
+    <circle cx="684" cy="64" r="18" fill="#c94a3a"/>
+
+    <!-- Ink lines (no text to avoid rendering/caching weirdness) -->
+    <g stroke="#4b4b4b" stroke-linecap="round" opacity="0.42">
+      <line x1="190" y1="84" x2="610" y2="84" stroke-width="10"/>
+      <line x1="190" y1="118" x2="744" y2="118" stroke-width="10"/>
+      <line x1="190" y1="152" x2="640" y2="152" stroke-width="10"/>
+    </g>
+  </g>
+</svg>
+

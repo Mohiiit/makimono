@@ -30,14 +30,36 @@ jobs:
 
           # Allow an explicit opt-out for "unstable" pushes to main.
           MSG="$(git log -1 --pretty=%B "$SHA")"
-          if echo "$MSG" | rg -q "\\[no-release\\]" ; then
+          if echo "$MSG" | grep -Eq "\\[no-release\\]" ; then
             echo "reason=commit message opted out ([no-release])" >> "$GITHUB_OUTPUT"
             echo "should_tag=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           # Read the bootstrapper version from Cargo.toml (workspace.package.version).
-          ver_now="$(python3 -c 'import tomllib; from pathlib import Path; d=tomllib.loads(Path(\"Cargo.toml\").read_text()); print(d[\"workspace\"][\"package\"][\"version\"])')"
+          # Avoid tomllib/tomli dependency differences across GitHub runner images.
+          ver_now="$(
+            python3 - <<'PY'
+import re
+from pathlib import Path
+
+txt = Path("Cargo.toml").read_text(encoding="utf-8")
+in_section = False
+for line in txt.splitlines():
+    s = line.strip()
+    if s == "[workspace.package]":
+        in_section = True
+        continue
+    if in_section and s.startswith("[") and s.endswith("]"):
+        break
+    if in_section:
+        m = re.match(r'^version\\s*=\\s*"([^"]+)"\\s*$', s)
+        if m:
+            print(m.group(1))
+            raise SystemExit(0)
+raise SystemExit("version not found under [workspace.package]")
+PY
+          )"
 
           # Determine what changed in this push.
           if [[ -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]]; then
@@ -47,10 +69,29 @@ jobs:
           fi
 
           # Only auto-tag when the Cargo.toml version was bumped in this push.
-          if echo "$CHANGED" | rg -q '^Cargo\\.toml$'; then
+          if echo "$CHANGED" | grep -Eq '^Cargo\\.toml$'; then
             # Compare previous version to current version.
             if [[ -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]]; then
-              ver_before="$(git show "${BEFORE}:Cargo.toml" | python3 -c 'import sys,tomllib; d=tomllib.loads(sys.stdin.read()); print(d[\"workspace\"][\"package\"][\"version\"])')"
+              ver_before="$(
+                git show "${BEFORE}:Cargo.toml" | python3 - <<'PY'
+import re, sys
+txt = sys.stdin.read()
+in_section = False
+for line in txt.splitlines():
+    s = line.strip()
+    if s == "[workspace.package]":
+        in_section = True
+        continue
+    if in_section and s.startswith("[") and s.endswith("]"):
+        break
+    if in_section:
+        m = re.match(r'^version\\s*=\\s*"([^"]+)"\\s*$', s)
+        if m:
+            print(m.group(1))
+            raise SystemExit(0)
+print("")
+PY
+              )"
             else
               ver_before=""
             fi
@@ -82,7 +123,7 @@ jobs:
           next="makimono-${VER}"
 
           # If this commit is already tagged with a makimono-x.y.z tag, do nothing.
-          if git tag --points-at "$GITHUB_SHA" | rg -q '^makimono-[0-9]+\\.[0-9]+\\.[0-9]+$'; then
+          if git tag --points-at "$GITHUB_SHA" | grep -Eq '^makimono-[0-9]+\\.[0-9]+\\.[0-9]+$'; then
             echo "commit already has a bootstrapper semver tag; skipping"
             exit 0
           fi
