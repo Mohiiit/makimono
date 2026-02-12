@@ -1,13 +1,17 @@
-# Makimono (Madara DB Visualizer)
+# Makimono
 
 <p align="center">
   <img alt="Makimono scroll" src="docs/images/makimono-scroll-v2.svg" width="720" />
 </p>
 
+<p align="center">
+  <b>Scroll your Madara RocksDB into a UI, in one command.</b>
+</p>
+
 [![Deploy to GitHub Pages](https://github.com/Mohiiit/makimono/actions/workflows/deploy.yml/badge.svg)](https://github.com/Mohiiit/makimono/actions/workflows/deploy.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Makimono is a `rustup`-style toolchain manager for a Madara RocksDB visualizer.
+Makimono is a `rustup`-style toolchain manager + visualizer for Madara's RocksDB.
 Point it at a DB directory, and it will:
 
 - detect the Madara DB schema version from `.db-version`
@@ -16,21 +20,7 @@ Point it at a DB directory, and it will:
 
 ![Makimono UI](docs/images/09-makimono-viz.png)
 
-## Why “Makimono”?
-
-In Naruto, a *makimono* is a scroll: compact, portable, and used to carry the important stuff.
-
-That’s the vibe here: Makimono carries the right visualizer for your DB schema version.
-
-## Naming
-
-- `makimono`: the end-user CLI you install and run (`makimono run ...`)
-- `makimono-viz`: the versioned toolchain binary that Makimono downloads and executes
-- “Madara DB Visualizer”: the web UI title (served by `makimono-viz`)
-
-This repo was previously named `madara-db-visualizer`.
-
-## Try It (No Docker)
+## Quickstart (No Docker)
 
 ### 1) Install
 
@@ -43,8 +33,6 @@ Windows PowerShell:
 ```powershell
 iwr -useb https://raw.githubusercontent.com/Mohiiit/makimono/main/install.ps1 | iex
 ```
-
-If the install script returns 404s, check that GitHub Releases are reachable from your network and that the repo/tag is correct.
 
 Developer fallback (build from source):
 ```bash
@@ -64,6 +52,20 @@ makimono run ./sample-db
 
 Open `http://127.0.0.1:8080`.
 
+## Why "Makimono"?
+
+In Naruto, a *makimono* is a scroll: compact, portable, and used to carry the important stuff.
+
+That’s the vibe here: Makimono carries the right visualizer for your DB schema version.
+
+## Naming
+
+- `makimono`: the end-user CLI you install and run (`makimono run ...`)
+- `makimono-viz`: the versioned toolchain binary that Makimono downloads and executes
+- "Madara DB Visualizer": the web UI title (served by `makimono-viz`)
+
+This repo was previously named `madara-db-visualizer`.
+
 ## Doctor
 
 If `makimono run` fails (or before running on a new machine/DB), run:
@@ -76,6 +78,12 @@ makimono doctor /path/to/madara/db
 
 `doctor` prints actionable checks (DB path, `.db-version`, toolchain availability, network reachability) and exits non-zero if it finds a blocking issue.
 
+## Requirements (End Users)
+
+- macOS/Linux: `curl`, `tar`, and a SHA256 tool (`shasum -a 256` or `sha256sum`).
+- Windows: PowerShell, and the default Windows archive tooling is enough for `install.ps1`.
+
+If you're on a locked-down network, ensure GitHub Releases are reachable (Makimono downloads toolchains from releases).
 
 ## Compatibility (Madara DB Versions)
 
