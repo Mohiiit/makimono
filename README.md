@@ -7,6 +7,12 @@
 
 Makimono detects your Madara DB schema version from `.db-version`, installs the matching visualizer toolchain, and runs the **UI + API from a single port**.
 
+## Why “Makimono”?
+
+In Naruto, a *makimono* is a scroll: compact, portable, and used to carry the important stuff.
+
+That’s the vibe here: you point Makimono at a Madara RocksDB directory, and it brings the right visualizer along for the ride (matching your DB schema version).
+
 ## Naming (So It's Not Confusing)
 
 - **Makimono**: the end-user CLI you install and run (`makimono run ...`).
@@ -18,6 +24,13 @@ This repository was previously named `madara-db-visualizer`.
 ![Makimono UI](docs/images/09-makimono-viz.png)
 
 ## Quickstart (No Docker)
+
+### What You Get
+
+- Single command: `makimono run <path>`
+- Zero Docker requirement for end users
+- Compatibility clarity via `.db-version`-based toolchains
+- One port serving everything: UI `/` + API `/api/*`
 
 ### Install
 
