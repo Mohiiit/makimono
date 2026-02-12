@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 use db_reader::version::detect_madara_db_version_for_db_path;
 
-const DEFAULT_REPO: &str = "Mohiiit/madara-db-visualizer";
+const DEFAULT_REPO: &str = "Mohiiit/makimono";
 
 #[derive(Parser, Debug)]
 #[command(name = "makimono")]

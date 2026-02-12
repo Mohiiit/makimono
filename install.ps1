@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repo = $env:MAKIMONO_REPO
-if (-not $Repo) { $Repo = "Mohiiit/madara-db-visualizer" }
+if (-not $Repo) { $Repo = "Mohiiit/makimono" }
 
 $Tag = $env:MAKIMONO_BOOTSTRAPPER_TAG
 if (-not $Tag) { $Tag = "makimono" }

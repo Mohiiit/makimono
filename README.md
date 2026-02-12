@@ -1,6 +1,10 @@
-# Madara DB Visualizer
+# Makimono (Madara DB Visualizer)
 
-A web-based **Database Inspector** for Madara's RocksDB - like pgAdmin but for blockchain storage. Understand how data is stored, inspect raw keys/values, and write custom SQL queries.
+A web-based **Database Inspector** for Madara's RocksDB, shipped as a single command (like `rustup`/`starkliup` but for DB visualization).
+
+Makimono detects your Madara DB schema version from `.db-version`, installs the matching visualizer toolchain, and runs the UI + API from a single port.
+
+Note: this repository was renamed from `madara-db-visualizer` to `makimono`.
 
 ## Screenshots
 
@@ -79,12 +83,12 @@ Makimono ships the visualizer as a **single command**, and automatically selects
 
 **Install (macOS/Linux):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mohiiit/madara-db-visualizer/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Mohiiit/makimono/main/install.sh | bash
 ```
 
 **Install (Windows PowerShell):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/Mohiiit/madara-db-visualizer/main/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/Mohiiit/makimono/main/install.ps1 | iex
 ```
 
 **Run:**
@@ -181,8 +185,8 @@ npm run css
 #### Step 1: Clone and Build
 
 ```bash
-git clone https://github.com/Mohiiit/madara-db-visualizer.git
-cd madara-db-visualizer
+git clone https://github.com/Mohiiit/makimono.git
+cd makimono
 
 # Build the standalone API server (no UI embedding)
 cargo build -p api --release --bin madara-db-visualizer-api
@@ -315,7 +319,7 @@ curl -X POST http://localhost:3000/api/index/query \
 ## Project Structure
 
 ```
-madara-db-visualizer/
+makimono/
 ├── Cargo.toml              # Workspace root
 ├── crates/
 │   ├── api/                # Axum HTTP server
@@ -347,10 +351,15 @@ Notes:
 
 ## Releases / Tagging
 
-This repo tags releases by the **Madara DB schema version** (`.db-version`) to make compatibility obvious long-term.
+This repo tags toolchain releases by the **Madara DB schema version** (`.db-version`) to make compatibility obvious.
 
-Example:
-- Tag `9` means the release targets Madara DB schema version `9` (and should clearly state which versions were validated).
+Toolchain policy:
+- Immutable releases: `<db_version>.<major>.<patch>` (example: `9.0.1`)
+- Moving alias tag: `<db_version>` (example: `9`) always points to the latest compatible build for that DB version
+
+Bootstrapper policy:
+- Immutable releases: `makimono-<semver>` (example: `makimono-0.1.0`)
+- Moving alias tag: `makimono`
 
 ### Port already in use
 ```bash
@@ -394,4 +403,4 @@ trunk serve index.html
 
 ## License
 
-MIT
+MIT. See `LICENSE`.

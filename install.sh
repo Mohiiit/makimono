@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${MAKIMONO_REPO:-Mohiiit/madara-db-visualizer}"
+REPO="${MAKIMONO_REPO:-Mohiiit/makimono}"
 TAG="${MAKIMONO_BOOTSTRAPPER_TAG:-makimono}"
 PREFIX="${MAKIMONO_INSTALL_PREFIX:-$HOME/.local/bin}"
 
