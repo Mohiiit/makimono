@@ -1,4 +1,4 @@
-# Makimono
+# Makimono (Madara DB Visualizer)
 
 > A Madara RocksDB visualizer shipped as a single command.
 
@@ -6,6 +6,14 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Makimono detects your Madara DB schema version from `.db-version`, installs the matching visualizer toolchain, and runs the **UI + API from a single port**.
+
+## Naming (So It's Not Confusing)
+
+- **Makimono**: the end-user CLI you install and run (`makimono run ...`).
+- **`makimono-viz`**: the versioned toolchain binary that Makimono downloads and runs for your DB version.
+- **Madara DB Visualizer**: the web UI title (served by `makimono-viz`).
+
+This repository was previously named `madara-db-visualizer`.
 
 ![Makimono UI](docs/images/09-makimono-viz.png)
 
@@ -23,7 +31,7 @@ Windows PowerShell:
 iwr -useb https://raw.githubusercontent.com/Mohiiit/makimono/main/install.ps1 | iex
 ```
 
-If the install script returns 404s, it usually means GitHub Releases for the bootstrapper/toolchains have not been published yet.
+If the install script returns 404s, check that GitHub Releases are reachable from your network and that the repo/tag is correct.
 
 Developer fallback (build from source):
 ```bash
