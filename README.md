@@ -6,6 +6,22 @@ Makimono detects your Madara DB schema version from `.db-version`, installs the 
 
 Note: this repository was renamed from `madara-db-visualizer` to `makimono`.
 
+## Compatibility (Madara DB Versions)
+
+Madara stores a DB schema version in a `.db-version` file under the Madara base path (next to the `db/` directory).
+
+Makimono reads `.db-version` and selects a matching toolchain release tag:
+- Immutable: `N.x.y` (example: `9.0.1`)
+- Moving alias: `N` (example: `9`) points to the latest compatible build
+
+If `.db-version` is missing, Makimono falls back to the highest installed toolchain (or errors if none are installed).
+
+Currently validated: `8` and `9`.
+
+Overrides:
+- `makimono run <path> --db-version <N>` to force a toolchain version
+- `makimono run <path> --offline` to disable downloads (requires the toolchain to be installed already)
+
 ## Screenshots
 
 ### Makimono (Single Port: UI + API)
@@ -76,6 +92,9 @@ Write custom SQL queries against the indexed data (blocks, transactions, events,
 ### Option A: Makimono (Single Command, No Docker)
 
 Makimono ships the visualizer as a **single command**, and automatically selects the correct toolchain for your Madara DB version (from `.db-version`).
+
+If the install script returns 404s, it usually means GitHub Releases for the bootstrapper/toolchains haven't been published yet for this repo.
+In that case, use Docker Compose or build locally (options below).
 
 **Prerequisites (for install scripts):**
 - macOS/Linux: `curl`, `tar`, and a SHA256 tool (`sha256sum` or `shasum` or `openssl`)
